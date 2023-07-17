@@ -113,27 +113,12 @@ tigera_operator_url: https://raw.githubusercontent.com/projectcalico/calico/v3.2
 calico_yml_url: https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/custom-resources.yaml
 
 # Usage: k8s_services.yml
-metallb_config_file_dest: /root/k8s/metal-config.yaml
-metallb_config_updated_file_dest: /root/k8s/metal-config-updated.yaml
-metallb_config_file_mode: 0655
-metallb_deployment_file_dest: /root/k8s/metallb.yaml
-metallb_deployment_file_mode: 0655
-metallb_yaml_url: https://raw.githubusercontent.com/google/metallb/v0.8.1/manifests/metallb.yaml
-metallb_addresses: |
-  addresses:
-        - 192.168.2.150/32
-        - 192.168.2.151/32
-        - 192.168.2.151/32
-        - 192.168.2.152/32
-        - 192.168.2.153/32
-        - 192.168.2.154/32
-        - 192.168.2.155/32
-        - 192.168.2.156/32
-        - 192.168.2.157/32
-        - 192.168.2.158/32
-        - 192.168.2.159/32
-metallb_container_port: "7472"
-metallb_run_as_user_port: "65534"
+metallb_ipaddresspool_file_dest: /var/lib/ipaddresspool.yaml
+metallb_ipaddresspool_file_mode: 0655
+metallb_l2advertisement_file_dest: /var/lib/l2advertisement.yaml
+metallb_l2advertisement_file_mode: 0655
+metallb_yaml_url: https://raw.githubusercontent.com/metallb/metallb/v0.13.4/config/manifests/metallb-native.yaml
+metallb_wait_time: 120
 k8s_dashboard_yaml_url: https://raw.githubusercontent.com/kubernetes/dashboard/v2.2.0/aio/deploy/recommended.yaml
 k8s_dashboard_admin_file_dest: /root/k8s/k8s_dashboard_admin.yaml
 k8s_dashboard_admin_file_mode: 0655

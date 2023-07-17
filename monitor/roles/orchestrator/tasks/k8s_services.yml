@@ -28,65 +28,40 @@
   changed_when: true
   when: "'metallb' not in k8s_pods.stdout"
 
-- name: Create MetalLB Setup Config Files
+- name: Wait for 2 minutes for MetalLB to be ready
+  ansible.builtin.pause:
+    seconds: '{{ metallb_wait_time }}'
+  when: "'metallb' not in k8s_pods.stdout"
+
+- name: Create IP Address Pool YAML file
   ansible.builtin.copy:
-    src: metal-config.yaml
-    dest: "{{ metallb_config_file_dest }}"
+    src: files/ipaddresspool.yaml
+    dest: "{{ metallb_ipaddresspool_file_dest }}"
     owner: root
     group: root
-    mode: "{{ metallb_config_file_mode }}"
+    mode: "{{ metallb_ipaddresspool_file_mode }}"
 
 - name: Replace metallb_addresses
   ansible.builtin.replace:
-    path: "{{ metallb_config_file_dest }}"
-    regexp: 'addresses:'
-    replace: "{{ metallb_addresses }}"
+    path: "{{ metallb_ipaddresspool_file_dest }}"
+    regexp: '^(\s*)addresses:(.*)$'
+    replace: '\1addresses:\n\1- {{ metallb_addresses }}\n\1\2\n\1autoAssign: true'
 
-- name: Remove ^M characters from metal-config file
-  ansible.builtin.shell: 'sed -e "s/\r//g" {{ metallb_config_file_dest }} > {{ metallb_config_updated_file_dest }}'
-  args:
-    warn: false
-  changed_when: true
-
-- name: Update metal-config file permissions
-  ansible.builtin.file:
-    path: "{{ metallb_config_updated_file_dest }}"
-    owner: root
-    group: root
-    mode: "{{ metallb_config_file_mode }}"
-
-- name: Remove old metallb-config file
-  ansible.builtin.file:
-    path: "{{ metallb_config_file_dest }}"
-    state: absent
-
-- name: Create MetalLB Setup Deployment Files
+- name: Create L2 Advertisement Config YAML file
   ansible.builtin.copy:
-    src: metallb.yaml
-    dest: "{{ metallb_deployment_file_dest }}"
+    src: files/l2advertisement.yaml
+    dest: "{{ metallb_l2advertisement_file_dest }}"
     owner: root
     group: root
-    mode: "{{ metallb_deployment_file_mode }}"
+    mode: "{{ metallb_l2advertisement_file_mode }}"
 
-- name: Replace metallb_container_port
-  ansible.builtin.replace:
-    path: "{{ metallb_deployment_file_dest }}"
-    regexp: 'metallb_container_port'
-    replace: "{{ metallb_container_port }}"
-
-- name: Replace metallb_container_port
-  ansible.builtin.replace:
-    path: "{{ metallb_deployment_file_dest }}"
-    regexp: 'metallb_run_as_user_port'
-    replace: "{{ metallb_run_as_user_port }}"
-
-- name: Deploy MetalLB
-  ansible.builtin.command: "kubectl apply -f '{{ metallb_deployment_file_dest }}'"
+- name: Deploy MetalLB IP Address Pool
+  ansible.builtin.command: "kubectl apply -f '{{ metallb_ipaddresspool_file_dest }}'"
   changed_when: true
   when: "'metallb' not in k8s_pods.stdout"
 
-- name: Create default setup for MetalLB
-  ansible.builtin.command: "kubectl apply -f '{{ metallb_config_updated_file_dest }}'"
+- name: Deploy MetalLB L2 Advertisement
+  ansible.builtin.command: "kubectl apply -f '{{ metallb_l2advertisement_file_dest }}'"
   changed_when: true
   when: "'metallb' not in k8s_pods.stdout"
 

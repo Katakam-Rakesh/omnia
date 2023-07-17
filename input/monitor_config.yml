@@ -50,3 +50,6 @@ grafana_password: ""
 # both timescale and mysql databases will be mounted to this location.
 # '/' is mandatory at the end of the path.
 mount_location: "/opt/omnia/telemetry/"
+
+
+metallb_addresses: "198.168.0.250-198.168.0.255"

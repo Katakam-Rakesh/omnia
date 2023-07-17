@@ -79,7 +79,7 @@
         labels:
           app: "{{ grafana_k8s }}"
       spec:
-        type: ClusterIP
+        type: LoadBalancer
         ports:
           - name: http
             port: "{{ grafana_http_port }}"
