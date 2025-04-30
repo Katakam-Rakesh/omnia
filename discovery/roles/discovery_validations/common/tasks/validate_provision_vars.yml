@@ -26,25 +26,6 @@
     msg: "{{ input_provision_fail_msg }}"
   when: language | default("", true) | length < 1
 
-- name: Assert that disk_partition does not have duplicate entries
-  ansible.builtin.assert:
-    that:
-      - disk_partition | map(attribute='mount_point')| list | unique | length == disk_partition | map(attribute='mount_point')| list | length
-    success_msg: "{{ disk_partition_success_msg }}"
-    fail_msg: "{{ disk_partition_fail_msg }}"
-
-- name: Assert language for provisioning nodes
-  ansible.builtin.fail:
-    msg: "{{ language_fail_msg }}"
-  when: '"en-US" not in language'
-
-- name: Assert provision_os for RHEL Omnia Infrastructure Manager
-  ansible.builtin.assert:
-    that:
-      - provision_os | lower == os_supported_rhel
-    success_msg: "{{ provision_os_success_msg }}"
-    fail_msg: "{{ provision_os_fail_msg }}"
-
 - name: Set supported_os_version_status to true - rhel
   ansible.builtin.set_fact:
     supported_os_version_status: true

@@ -43,12 +43,12 @@ Categories:
 #           - ensp0:
 #               nicnetwork: "nic_network1"
 #               nictypes: "ethernet"
-#               metric:
+#               metric: ""
 #           - ensp0.5:
 #               nicnetwork: "nic_network2"
 #               nictypes: "vlan"
 #               nicdevices: "ensp0"
-#               metric:
+#               metric: ""
 #       - os:
 #           - kernel:
 #               - cmdline: ""

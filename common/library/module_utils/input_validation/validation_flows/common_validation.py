@@ -236,7 +236,7 @@ def validate_server_spec(input_file_path, data, logger, module, omnia_base_dir, 
         return errors
 
     network_spec_file_path = create_file_path(input_file_path, file_names["network_spec"])
-    network_spec_json = validation_utils.load_yaml_as_json(network_spec_file_path, omnia_base_dir, module_utils_base, project_name, logger, module)
+    network_spec_json = validation_utils.load_yaml_as_json(network_spec_file_path, omnia_base_dir, project_name, logger, module)
 
     for server in server_groups:
         for key, value in server.items():

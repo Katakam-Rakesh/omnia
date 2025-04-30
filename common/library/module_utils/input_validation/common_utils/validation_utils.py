@@ -268,6 +268,16 @@ def validate_ipv4_range(ip_range) -> bool:
     except ValueError:
         return False
 
+def validate_netmask_bits(bits):
+    try:
+        bits_int = int(bits)
+        if 1 <= bits_int <= 32:
+            return True
+        else:
+            return False
+    except (ValueError, TypeError):
+        return False
+
 def check_bmc_static_range_overlap(static_range, static_range_group_mapping) -> list:
     """
     Checks if the given static BMC range overlaps with any of the ranges in other groups.

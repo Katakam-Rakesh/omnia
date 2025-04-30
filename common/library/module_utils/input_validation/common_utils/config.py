@@ -46,7 +46,7 @@ input_file_inventory = {
     "scheduler": [files["omnia_config"], files["software_config"]],
     "provision": [
         files["provision_config"],
-        #files["network_spec"],
+        files["network_spec"],
         files["software_config"],
         files["roles_config"]
     ],
