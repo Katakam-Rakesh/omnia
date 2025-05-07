@@ -1,0 +1,36 @@
+#!/bin/bash
+################################################################################################################
+#  omnia_oim_ha_node:
+#      Configure a passive OIM node.
+#################################################################################################################
+# Define log file
+LOGFILE="/var/log/xcat/xcat.log"
+
+# Get the directory of the log file
+log_dir=$(dirname "$LOGFILE")
+
+# Create the log directory if it doesn't exist
+if [ ! -d "$log_dir" ]; then
+    mkdir -p "$log_dir"
+fi
+
+# Create the log file if it doesn't exist
+if [ ! -f "$LOGFILE" ]; then
+    touch "$LOGFILE"
+fi
+
+echo "--------------------------" >> "$LOGFILE"
+echo "$(date) - INFO - Starting OIM Passive node setup." >> "$LOGFILE"
+
+systemctl daemon-reload
+# Enable and start podman.socket
+echo -e "INFO: Enabling and starting the podman socket." >> "$LOGFILE"
+sudo systemctl enable podman.socket || { echo "ERROR: Enabling podman.socket." >> "$LOGFILE"; exit 1; }
+sudo systemctl start podman.socket || { echo "ERROR: Starting podman.socket." >> "$LOGFILE"; exit 1; }
+
+# Start the omnia_pcs service
+echo -e "INFO: Starting the omnia_pcs service." >> "$LOGFILE"
+sudo systemctl start omnia_pcs || { echo "ERROR: Starting omnia_pcs service." >> "$LOGFILE"; exit 1; }
+
+echo "$(date) - INFO - Finished OIM Passive node setup." >> "$LOGFILE"
+echo "---------------------------"
