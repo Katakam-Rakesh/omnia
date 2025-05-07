@@ -16,7 +16,7 @@
 - name: Run Kubernetes health check module
   k8s_health:
     retries: 5
-    delay: 10
+    delay: 30
   register: k8s_status
   failed_when: false
 

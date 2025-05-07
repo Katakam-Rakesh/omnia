@@ -104,11 +104,11 @@
     - hostvars[groups['kube_control_plane'][0]]['k8s_installation_status']
     - hostvars[groups['kube_control_plane'][0]]['k8s_new_nodes'] != ''
 
-# - name: Update containerd config on nodes
-# hosts: kube_control_plane, kube_node
-# gather_facts: false
-# roles:
-# - update_containerd_config
+- name: Update containerd config on nodes
+  hosts: kube_control_plane, kube_node
+  gather_facts: false
+  roles:
+    - update_containerd_config
 
 - name: Prepare habana container runtime
   hosts: kube_node
@@ -129,7 +129,7 @@
     - k8s_amd
 
 - name: Deploy plugins on kube control nodes
-  hosts: kube_control_plane
+  hosts: kube_control_plane[0]
   gather_facts: false
   roles:
     - common_plugins

@@ -65,3 +65,12 @@ group_value: "root"
 gpu_operators_namespace: "gpu-operator"
 timeout_min_sec: 600s
 directory_permissions: "0755"
+
+# Usage: prereq.yml
+pip_packages:
+  - name: kubernetes
+    version: 32.0.1
+  - name: prettytable
+    version: 3.14.0
+
+ansible_python_interpreter: /usr/bin/python3.11
