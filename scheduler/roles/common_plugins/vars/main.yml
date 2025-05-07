@@ -52,3 +52,16 @@ nfs_subdir_external_provisioner_repo: "{{ hostvars['localhost']['offline_tarball
 nfs_subdir_external_provisioner_dest_repo: "{{ k8s_tmp_dir }}/nfs-subdir-external-provisioner-4.0.18.tar.gz"
 helm_install_fail_msg: "Failed to fetch helm path. Please verify helm installation and ensure the environment variable PATH is correctly set in the node.
 Re-run the playbook after verification."
+
+# Usage: deploy_nvidia_gpu_operator.yml
+nvidia_gpu_operator_path: "{{ k8s_tmp_dir }}/nvidia-gpu-operator-v{{ hostvars['localhost']['nvidia_gpu_operator_version'] }}"
+nvidia_gpu_operator_config_file_path: "{{ nvidia_gpu_operator_path }}/gpu_operator_config.yml"
+nvidia_gpu_operator_helm_chart: "nvidia-gpu-operator-v{{ hostvars['localhost']['nvidia_gpu_operator_version'] }}.tar.gz"
+nvidia_gpu_operator_helm_chart_path: "/tmp/{{ nvidia_gpu_operator_helm_chart }}"
+fail_msg_nvidia_gpu_operator_helm_chart_download: "Failed to get nvidia gpu operator helm chart from local repo location: {{ offline_tarball_path }}"
+permission_644: "0644"
+owner_value: "root"
+group_value: "root"
+gpu_operators_namespace: "gpu-operator"
+timeout_min_sec: 600s
+directory_permissions: "0755"

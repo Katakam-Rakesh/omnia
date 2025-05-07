@@ -51,3 +51,14 @@
       - prettytable
     executable: pip3
   become: true
+
+- name: Fetch helm path
+  block:
+    - name: Fetch helm path
+      ansible.builtin.command: whereis helm
+      changed_when: false
+      register: helm_full_path
+  rescue:
+    - name: Helm not installed
+      ansible.builtin.fail:
+        msg: "{{ helm_install_fail_msg }}"
