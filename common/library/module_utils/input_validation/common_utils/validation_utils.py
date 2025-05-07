@@ -345,3 +345,38 @@ def check_port_ranges(port_ranges) -> bool:
                 return False
 
     return True
+
+def is_range_within_netmask(ip_range, netmask_bits):
+    """
+    Check if a given IP range falls within the valid IP address range for a given netmask.
+
+    Args:
+        ip_range (str): The IP range in format "start_ip-end_ip"
+            (e.g., "192.168.1.10-192.168.1.50").
+        netmask_bits (int or str): The netmask bits (e.g., 20 for /20).
+
+    Returns:
+        bool: True if the IP range is valid for the given netmask, False otherwise.
+    """
+    try:
+        # Parse the IP range
+        start_ip, end_ip = ip_range.split('-')
+        start_ip_obj = ipaddress.ip_address(start_ip)
+        end_ip_obj = ipaddress.ip_address(end_ip)
+
+        # Ensure start_ip <= end_ip
+        if start_ip_obj > end_ip_obj:
+            return False
+
+        # Create network from start_ip with the given netmask
+        network = ipaddress.ip_network(f"{start_ip}/{netmask_bits}", strict=False)
+
+        # Get first and last usable addresses (excluding network and broadcast)
+        first_usable = network.network_address + 1
+        last_usable = network.broadcast_address - 1
+
+        # Check if both start and end IPs are within the usable range
+        return (first_usable <= start_ip_obj <= last_usable and
+                first_usable <= end_ip_obj <= last_usable)
+    except (ValueError, TypeError):
+        return False

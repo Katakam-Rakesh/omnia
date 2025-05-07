@@ -230,9 +230,9 @@ init_container_config() {
             echo -e "${BLUE} Please provide Omnia shared path:${NC}"
             read -p "Omnia shared path: " omnia_path
 
-            # Check if the Omnia shared path exists.
-            if [ ! -d "$omnia_path" ]; then
-                echo -e "${RED} Omnia shared path does not exist!${NC}"
+            # Check if the Omnia shared path is absolute path and path exists.
+            if [[ "$omnia_path" != /* ]] || [ ! -d "$omnia_path" ]; then
+                echo -e "${RED} Omnia shared path is not an absolute path or does not exist! Please re-run omnia_startup.sh with valid Omnia shared path${NC}"
                 exit
             fi
             ;;
@@ -297,7 +297,9 @@ init_container_config() {
 
         # Validate if NFS server share path is mounted
         echo -e "${BLUE} Validating if NFS server share path is mounted.${NC}"
-        if grep -qs "$nfs_server_ip:$nfs_server_share_path" /proc/mounts; then
+	# strip the trailing slash from nfs_server_share_path
+	strip_nfs_server_share_path="${nfs_server_share_path%/}"
+        if grep -qs "$nfs_server_ip:$strip_nfs_server_share_path" /proc/mounts; then
             echo -e "${GREEN} NFS server share path is mounted.${NC}"
         else
             echo -e "${RED} NFS server share path is not mounted. Provide valid NFS server details. ${NC}"
@@ -627,8 +629,9 @@ main() {
 
     # If there are any, exit
     if [ -n "$other_containers" ]; then
-        echo -e "${RED} There are other omnia container running.${NC}"
+        echo -e "${RED} Failed to intiatiate omnia_core container cleanup. There are other omnia container running.${NC}"
         echo -e "${GREEN} Execute oim_cleanup.yml first to cleanup all containers.${NC}"
+        ssh omnia_core
         exit 1
     fi
 
@@ -717,7 +720,7 @@ main() {
             echo -e "${RED} The Omnia Core container is present but not in running state.${NC}"
             echo -e "${GREEN} Only the core container can be cleanup can be performed.${NC}"
             echo -e "${GREEN} Container Configurations in the shared directory will not be cleaned up.${NC}"
-            echo -e "${GREEN} Do you want to preform cleanup:${NC}"
+            echo -e "${GREEN} Do you want to perform cleanup:${NC}"
             echo -e "${GREEN} 1. Yes.${NC}"
             echo -e "${GREEN} 2. No. ${NC}"
             read -p " Enter your choice (1 or 2): " choice

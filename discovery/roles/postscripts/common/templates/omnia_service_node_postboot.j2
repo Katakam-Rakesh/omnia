@@ -53,5 +53,29 @@ fi
 # Applying mount based on fstab entry
 run_or_fail mount -a
 
+# Making enty in /etc/exports
+mkdir -p /install
+mkdir -p /tftpboot
+INSTALL_EXPORT="/install *(rw,no_root_squash,sync,no_subtree_check,fsid=1)"
+TFTPBOOT_EXPORT="/tftpboot *(rw,no_root_squash,sync,no_subtree_check,fsid=1)"
+
+# For /install
+if grep -q "^/install" /etc/exports; then
+    # Update existing /install line
+    sed -i '/^\/install/c\'"$INSTALL_EXPORT" /etc/exports
+else
+    # Add new /install line
+    echo "$INSTALL_EXPORT" >> /etc/exports
+fi
+
+# For /tftpboot
+if grep -q "^/tftpboot" /etc/exports; then
+    sed -i '/^\/tftpboot/c\'"$TFTPBOOT_EXPORT" /etc/exports
+else
+    echo "$TFTPBOOT_EXPORT" >> /etc/exports
+fi
+
+run_or_fail exportfs -arv
+
 echo "$(date) - INFO - Finished Omnia Service node postboot configuration" >> "$LOGFILE"
 echo "---------------------------"

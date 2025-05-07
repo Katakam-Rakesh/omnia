@@ -57,9 +57,11 @@ nfs_not_configured: "When enabling OIM HA or Service Node HA or Heirarchical clu
 omnia_metadata_file: "/opt/omnia/.data/oim_metadata.yml"
 omnia_images_path: "/opt/omnia/images/omnia_images.tar"
 omnia_images_path_fail_msg: |
-  "Images tarball doesnot exists. To support either Service node HA or OIM HA input must be provided in
-  high_availability_config.yml before running the prepare_oim playbook.
-  Please execute the oim_cleanup.yml and re-run the prepare_oim.yml playbook with high_availability_config.yml input."
+  "Images tarball does not exist. To support either OIM HA or heirarchical provisioning, input must be provided in
+  the high_availability_config.yml or roles_config.yml before running the prepare_oim.yml playbook.
+  For a Hierarchical Cluster, service node role should be defined in the roles_config.yml.
+  Please run oim_cleanup.yml and then re-run prepare_oim.yml with the appropriate inputs."
+
 # invalid_share_option_msg: |
 #   [ERROR] Invalid value \"{{ omnia_share_option }}\" provided for omnia share path type.
 #   For hierarchical-based discovery and provisioning, this must be set to \"NFS\".
