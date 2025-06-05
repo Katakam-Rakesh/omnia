@@ -23,6 +23,3 @@
         name: "{{ pcs_container_name }}"
         command: "/bin/bash {{ pcs_telemetry_resource_script_path }}"
       failed_when: false
-
-    - name: Create mysqldb
-      ansible.builtin.include_tasks: mysqldb_creation.yml
