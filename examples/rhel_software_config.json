@@ -20,7 +20,8 @@
         {"name": "utils"},
         {"name": "ucx", "version": "1.15.0"},
         {"name": "openmpi", "version": "4.1.6"},
-        {"name": "racadm"}
+        {"name": "racadm"},
+        {"name": "hpc_apptainer"}
     ],
 
     "amdgpu": [
