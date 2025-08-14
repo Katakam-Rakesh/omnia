@@ -11,7 +11,8 @@
         {"name": "nfs"},
         {"name": "k8s", "version":"1.31.4"},
         {"name": "service_k8s","version": "1.31.4"},
-        {"name": "slurm"}
+        {"name": "slurm"},
+	{"name": "hpc_apptainer"}
     ],
     "amdgpu": [
         {"name": "rocm", "version": "6.3.1" }
