@@ -43,6 +43,10 @@
   ansible.builtin.import_tasks: cleanup_auth.yml
   tags: auth
 
+- name: Cleanup build_stream container
+  ansible.builtin.import_tasks: cleanup_build_stream.yml
+  tags: build_stream
+
 - name: Cleanup common configuration
   ansible.builtin.import_tasks: cleanup_common.yml
   tags: common
