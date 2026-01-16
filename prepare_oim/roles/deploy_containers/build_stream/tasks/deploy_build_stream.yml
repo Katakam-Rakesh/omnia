@@ -40,7 +40,7 @@
   ansible.builtin.set_fact:
     omnia_path: "{{ omnia_shared_path_result }}"
 
-- name: Display image source configuration
+- name: Display image configuration
   ansible.builtin.debug:
     msg:
       - "Image Source: {{ build_stream_image_source }}"
@@ -51,25 +51,12 @@
     name: "{{ build_stream_image_name }}"
     tag: "{{ build_stream_image_tag }}"
     state: present
-  when: build_stream_image_source == 'dockerhub'
   register: dockerhub_pull_result
 
 - name: Display Docker Hub pull result
   ansible.builtin.debug:
     msg: "{{ build_stream_dockerhub_pull_success_msg }}"
-  when: build_stream_image_source == 'dockerhub' and dockerhub_pull_result is succeeded
-
-- name: Check if local omnia_build_stream image exists
-  containers.podman.podman_image_info:
-    name: "{{ build_stream_image_name }}:{{ build_stream_image_tag }}"
-  register: build_stream_image_info
-  failed_when: false
-  when: build_stream_image_source == 'local'
-
-- name: Fail if local omnia_build_stream image does not exist
-  ansible.builtin.fail:
-    msg: "{{ build_stream_local_image_not_found_msg }}"
-  when: build_stream_image_source == 'local' and (build_stream_image_info.images | length == 0)
+  when: dockerhub_pull_result is succeeded
 
 - name: Check if omnia_build_stream container already exists
   containers.podman.podman_container_info:
@@ -212,7 +199,6 @@
       - "{{ build_stream_deployment_success_msg }}"
       - "Container Name: {{ build_stream_container_name }}"
       - "Image: {{ build_stream_image_name }}:{{ build_stream_image_tag }}"
-      - "Image Source: {{ build_stream_image_source }}"
       - "Port: {{ build_stream_port }}"
       - "Health Check: {{ build_stream_health_endpoint }}"
       - "Status: {{ health_check.json }}"

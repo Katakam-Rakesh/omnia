@@ -74,10 +74,10 @@
         name: deploy_containers/auth
         tasks_from: generate_ldap_password_hashes.yml
 
-- name: Deploy the pulp container
+- name: Deploy containers
   hosts: oim
   connection: ssh
-  gather_facts: false
+  gather_facts: true
   roles:
     - role: deploy_containers/common  # noqa:role-name[path]
       tags: always
@@ -85,6 +85,9 @@
       tags: pulp
     - role: deploy_containers/auth  # noqa:role-name[path]
       tags: auth
+    - role: deploy_containers/build_stream  # noqa:role-name[path]
+      tags: build_stream
+      when: enable_build_stream | default(false) | bool
 
 - name: Verify openchami install status
   hosts: oim
