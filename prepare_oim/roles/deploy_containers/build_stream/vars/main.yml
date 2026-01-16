@@ -1,0 +1,61 @@
+# Copyright 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+---
+
+# Build Stream Container Configuration
+build_stream_container_name: "omnia_build_stream"
+
+# Image source configuration
+# Set to 'dockerhub' to pull from Docker Hub or 'local' to use locally built image
+# Default: local
+build_stream_image_source: "local"
+
+# Docker Hub configuration
+build_stream_dockerhub_registry: "docker.io/dellhpcomniaaisolution"
+build_stream_dockerhub_image: "{{ build_stream_dockerhub_registry }}/omnia_build_stream"
+
+# Local image configuration
+build_stream_local_image: "omnia_build_stream"
+
+# Image name (dynamically set based on source)
+build_stream_image_name: "{{ build_stream_dockerhub_image if build_stream_image_source == 'dockerhub' else build_stream_local_image }}"
+build_stream_image_tag: "1.0"
+build_stream_port: 443
+build_stream_log_dir: "/var/log/omnia_build_stream"
+
+# SSL certificate configuration
+build_stream_ssl_dir: "/opt/omnia/build_stream/ssl"
+build_stream_ssl_cert: "{{ build_stream_ssl_dir }}/cert.pem"
+build_stream_ssl_key: "{{ build_stream_ssl_dir }}/key.pem"
+build_stream_ssl_days: 365
+
+# Pulp certificate configuration
+pulp_certs_dir: "/opt/omnia/pulp/settings/certs"
+pulp_webserver_cert: "{{ pulp_certs_dir }}/pulp_webserver.crt"
+
+# Quadlet service file path
+build_stream_quadlet_path: "/etc/containers/systemd/{{ build_stream_container_name }}.container"
+
+# Health check endpoint
+build_stream_health_endpoint: "https://localhost:{{ build_stream_port }}/health"
+
+# Firewall configuration
+build_stream_firewall_port: "{{ build_stream_port }}/tcp"
+
+# Messages
+build_stream_omnia_core_not_running_msg: "omnia_core container must be running before deploying omnia_build_stream"
+build_stream_local_image_not_found_msg: "Container image {{ build_stream_image_name }}:{{ build_stream_image_tag }} not found locally. Please build it first using build_images.sh or set build_stream_image_source to 'dockerhub'"
+build_stream_dockerhub_pull_success_msg: "Successfully pulled {{ build_stream_image_name }}:{{ build_stream_image_tag }} from Docker Hub"
+build_stream_deployment_success_msg: "omnia_build_stream container deployed successfully"
