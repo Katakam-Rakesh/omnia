@@ -74,6 +74,17 @@
         name: deploy_containers/auth
         tasks_from: generate_ldap_password_hashes.yml
 
+- name: Load build_stream configuration
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: build_stream
+  tasks:
+    - name: Include build_stream config file
+      ansible.builtin.include_vars:
+        file: "{{ input_project_dir }}/build_stream_config.yml"
+      failed_when: false
+
 - name: Deploy containers
   hosts: oim
   connection: ssh
@@ -85,9 +96,6 @@
       tags: pulp
     - role: deploy_containers/auth  # noqa:role-name[path]
       tags: auth
-    - role: deploy_containers/build_stream  # noqa:role-name[path]
-      tags: build_stream
-      when: enable_build_stream | default(false) | bool
 
 - name: Verify openchami install status
   hosts: oim
@@ -137,6 +145,15 @@
         name: deploy_containers/pulp
         tasks_from: reload_pulp_nginx.yml
       when: hostvars['oim']['pulp_protocol_https']
+
+- name: Deploy build_stream container
+  hosts: oim
+  connection: ssh
+  gather_facts: false
+  tags: build_stream
+  roles:
+    - role: deploy_containers/build_stream  # noqa:role-name[path]
+      when: enable_build_stream | default(false) | bool
 
 - name: Omnia service deployment
   hosts: oim
