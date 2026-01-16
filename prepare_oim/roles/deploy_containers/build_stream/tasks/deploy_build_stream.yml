@@ -1,4 +1,4 @@
-# Copyright 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright 2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@
 - name: Display image configuration
   ansible.builtin.debug:
     msg:
-      - "Image Source: {{ build_stream_image_source }}"
+      - "Image Source: Docker Hub"
       - "Image Name: {{ build_stream_image_name }}:{{ build_stream_image_tag }}"
 
 - name: Pull omnia_build_stream image from Docker Hub
@@ -89,14 +89,9 @@
   ansible.builtin.set_fact:
     selinux_option: "{{ ':z' if (share_option != 'NFS' or nfs_type | default('') != 'external') else '' }}"
 
-- name: Extract Pulp server IP from metadata
+- name: Extract admin NIC IP from metadata for Pulp
   ansible.builtin.set_fact:
-    pulp_server_ip: "{{ metadata_content.stdout | regex_search('pulp_server_ip:\\s*(\\S+)', '\\1') | first | default('') }}"
-
-- name: Extract admin NIC IP from metadata if Pulp IP not found
-  ansible.builtin.set_fact:
-    pulp_server_ip: "{{ metadata_content.stdout | regex_search('admin_nic_ip:\\s*(\\S+)', '\\1') | first }}"
-  when: pulp_server_ip | length == 0
+    pulp_server_ip: "{{ (metadata_content.stdout | regex_search('admin_nic_ip:\\s*(\\S+)', '\\1') | default([None], true))[0] | default('', true) }}"
 
 - name: Set Pulp base URL
   ansible.builtin.set_fact:
@@ -159,13 +154,14 @@
     state: started
     enabled: true
 
-- name: Wait for omnia_build_stream container to be ready
-  ansible.builtin.wait_for:
-    host: localhost
-    port: "{{ build_stream_port }}"
-    delay: 5
-    timeout: 60
-    state: started
+# TODO: Uncomment when API server is implemented
+# - name: Wait for omnia_build_stream container to be ready
+#   ansible.builtin.wait_for:
+#     host: localhost
+#     port: "{{ build_stream_port }}"
+#     delay: 5
+#     timeout: 60
+#     state: started
 
 - name: Configure firewall for omnia_build_stream
   block:
@@ -182,16 +178,17 @@
         state: enabled
         immediate: true
 
-- name: Verify omnia_build_stream health endpoint
-  ansible.builtin.uri:
-    url: "{{ build_stream_health_endpoint }}"
-    method: GET
-    return_content: true
-    status_code: 200
-  register: health_check
-  retries: 5
-  delay: 10
-  until: health_check.status == 200
+# TODO: Uncomment when API server is implemented
+# - name: Verify omnia_build_stream health endpoint
+#   ansible.builtin.uri:
+#     url: "{{ build_stream_health_endpoint }}"
+#     method: GET
+#     return_content: true
+#     status_code: 200
+#   register: health_check
+#   retries: 5
+#   delay: 10
+#   until: health_check.status == 200
 
 - name: Display omnia_build_stream deployment status
   ansible.builtin.debug:
@@ -199,6 +196,5 @@
       - "{{ build_stream_deployment_success_msg }}"
       - "Container Name: {{ build_stream_container_name }}"
       - "Image: {{ build_stream_image_name }}:{{ build_stream_image_tag }}"
-      - "Port: {{ build_stream_port }}"
-      - "Health Check: {{ build_stream_health_endpoint }}"
-      - "Status: {{ health_check.json }}"
+      - "Port: {{ build_stream_port }} (API server disabled - not implemented yet)"
+      - "Note: Container is running but API endpoints are not available"

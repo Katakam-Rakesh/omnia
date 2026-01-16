@@ -22,7 +22,7 @@ build_stream_dockerhub_registry: "docker.io/dellhpcomniaaisolution"
 build_stream_image_name: "{{ build_stream_dockerhub_registry }}/omnia_build_stream"
 build_stream_image_tag: "1.0"
 build_stream_port: 443
-build_stream_log_dir: "/var/log/omnia_build_stream"
+build_stream_log_dir: "{{ omnia_path }}/omnia/log/build_stream"
 
 # SSL certificate configuration
 build_stream_ssl_dir: "/opt/omnia/build_stream/ssl"

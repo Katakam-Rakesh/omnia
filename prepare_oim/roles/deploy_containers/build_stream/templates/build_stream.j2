@@ -22,7 +22,7 @@ Environment=PULP_BASE_URL={{ pulp_base_url }}
 
 # Volume mounts (shared from omnia_core)
 Volume={{ omnia_path }}/omnia:/opt/omnia{{ selinux_option }}
-Volume={{ build_stream_log_dir }}:/var/log{{ selinux_option }}
+Volume={{ build_stream_log_dir }}:/var/log/omnia_build_stream{{ selinux_option }}
 Volume={{ build_stream_ssl_dir }}:/etc/ssl/omnia:ro{{ selinux_option }}
 Volume={{ pulp_certs_dir }}:/etc/pulp/certs:ro{{ selinux_option }}
 
