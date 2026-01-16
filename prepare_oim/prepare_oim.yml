@@ -78,7 +78,7 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  tags: build_stream
+  tags: always
   tasks:
     - name: Include build_stream config file
       ansible.builtin.include_vars:
