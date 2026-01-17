@@ -16,9 +16,10 @@ Network=host
 # Environment variables
 Environment=OMNIA_ENV=production
 Environment=OMNIA_DEBUG=false
-{% if pulp_base_url is defined %}
 Environment=PULP_BASE_URL={{ pulp_base_url }}
-{% endif %}
+Environment=PULP_USERNAME=admin
+Environment=PULP_PASSWORD={{ pulp_password }}
+Environment=PULP_VERIFY_SSL=true
 
 # Volume mounts (shared from omnia_core)
 Volume={{ omnia_path }}/omnia:/opt/omnia{{ selinux_option }}

@@ -34,6 +34,9 @@ build_stream_ssl_days: 365
 pulp_certs_dir: "/opt/omnia/pulp/settings/certs"
 pulp_webserver_cert: "{{ pulp_certs_dir }}/pulp_webserver.crt"
 
+# Pulp server configuration - will be set dynamically during deployment
+pulp_base_url: "https://{{ admin_nic_ip }}:2225"
+
 # Quadlet service file path
 build_stream_quadlet_path: "/etc/containers/systemd/{{ build_stream_container_name }}.container"
 

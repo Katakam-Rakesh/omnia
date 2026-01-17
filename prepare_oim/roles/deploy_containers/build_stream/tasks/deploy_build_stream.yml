@@ -89,13 +89,15 @@
   ansible.builtin.set_fact:
     selinux_option: "{{ ':z' if (share_option != 'NFS' or nfs_type | default('') != 'external') else '' }}"
 
-- name: Extract admin NIC IP from metadata for Pulp
+- name: Extract Pulp server IP and password from metadata
   ansible.builtin.set_fact:
-    pulp_server_ip: "{{ (metadata_content.stdout | regex_search('admin_nic_ip:\\s*(\\S+)', '\\1') | default([None], true))[0] | default('', true) }}"
+    pulp_server_ip: "{{ (metadata_content.stdout | from_yaml).admin_nic_ip }}"
+    pulp_password: "{{ (metadata_content.stdout | from_yaml).pulp_password }}"
+  no_log: true
 
 - name: Set Pulp base URL
   ansible.builtin.set_fact:
-    pulp_base_url: "https://{{ pulp_server_ip }}:443"
+    pulp_base_url: "https://{{ pulp_server_ip }}:2225"
   when: pulp_server_ip | length > 0
 
 - name: Create SSL certificate directory

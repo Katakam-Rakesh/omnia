@@ -1,4 +1,4 @@
-# Copyright 2025 Dell Inc. or its subsidiaries. All Rights Reserved.
+# Copyright 2026 Dell Inc. or its subsidiaries. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -153,7 +153,7 @@
   tags: build_stream
   roles:
     - role: deploy_containers/build_stream  # noqa:role-name[path]
-      when: enable_build_stream | default(false) | bool
+      when: hostvars['localhost']['enable_build_stream'] | default(false) | bool
 
 - name: Omnia service deployment
   hosts: oim
