@@ -89,10 +89,10 @@
   ansible.builtin.set_fact:
     selinux_option: "{{ ':z' if (share_option != 'NFS' or nfs_type | default('') != 'external') else '' }}"
 
-- name: Extract Pulp server IP and password from metadata
+- name: Set Pulp server IP and password from hostvars
   ansible.builtin.set_fact:
-    pulp_server_ip: "{{ (metadata_content.stdout | from_yaml).admin_nic_ip }}"
-    pulp_password: "{{ (metadata_content.stdout | from_yaml).pulp_password }}"
+    pulp_server_ip: "{{ hostvars['localhost']['admin_nic_ip'] }}"
+    pulp_password: "{{ hostvars['localhost']['pulp_password'] }}"
   no_log: true
 
 - name: Set Pulp base URL
@@ -155,6 +155,22 @@
     name: "{{ build_stream_container_name }}.service"
     state: started
     enabled: true
+
+- name: Wait for container to be ready
+  ansible.builtin.pause:
+    seconds: "{{ container_startup_wait_seconds }}"
+
+- name: Copy Pulp certificate to container trust store
+  containers.podman.podman_container_exec:
+    name: "{{ build_stream_container_name }}"
+    command: cp {{ pulp_cert_container_path }} {{ ca_trust_anchors_path }}
+  changed_when: true
+
+- name: Update CA trust in container
+  containers.podman.podman_container_exec:
+    name: "{{ build_stream_container_name }}"
+    command: update-ca-trust extract
+  changed_when: true
 
 # TODO: Uncomment when API server is implemented
 # - name: Wait for omnia_build_stream container to be ready
