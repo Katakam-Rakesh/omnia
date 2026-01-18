@@ -53,19 +53,13 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
-- name: Get podman info for omnia_build_stream container
-  containers.podman.podman_container_info:
-    name: "{{ build_stream_container_name }}"
-  register: podmen
-  no_log: true
-
-- name: Get info about omnia_build_stream
+- name: Get info about omnia_build_stream container
   containers.podman.podman_container_info:
     name: "{{ build_stream_container_name }}"
   register: podinfo
   failed_when: false
 
-- name: Stop build_stream service only if it exists
+- name: Stop build_stream container only if it exists
   containers.podman.podman_container:
     name: "{{ build_stream_container_name }}"
     state: stopped
