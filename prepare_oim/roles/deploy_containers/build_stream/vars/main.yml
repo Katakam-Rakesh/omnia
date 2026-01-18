@@ -22,7 +22,7 @@ build_stream_dockerhub_registry: "docker.io/dellhpcomniaaisolution"
 build_stream_image_name: "{{ build_stream_dockerhub_registry }}/omnia_build_stream"
 build_stream_image_tag: "1.0"
 build_stream_port: 443
-build_stream_log_dir: "{{ omnia_path }}/omnia/log/build_stream"
+build_stream_log_dir: "{{ omnia_path }}/log/build_stream"
 
 # SSL certificate configuration
 build_stream_ssl_dir: "/opt/omnia/build_stream/ssl"
@@ -33,25 +33,22 @@ build_stream_ssl_days: 365
 # Pulp certificate configuration
 pulp_certs_dir: "/opt/omnia/pulp/settings/certs"
 pulp_webserver_cert: "{{ pulp_certs_dir }}/pulp_webserver.crt"
-pulp_cert_container_path: "/etc/pulp/certs/pulp_webserver.crt"
-ca_trust_anchors_path: "/etc/pki/ca-trust/source/anchors/pulp_webserver.crt"
 
 # Pulp server configuration - will be set dynamically during deployment
 pulp_base_url: "https://{{ admin_nic_ip }}:2225"
-
-# Container startup wait time
-container_startup_wait_seconds: 5
 
 # Quadlet service file path
 build_stream_quadlet_path: "/etc/containers/systemd/{{ build_stream_container_name }}.container"
 
 # Health check endpoint
 build_stream_health_endpoint: "https://localhost:{{ build_stream_port }}/health"
+container_ready_wait_seconds: 5
+health_check_retries: 5
+health_check_delay: 10
+health_check_status_code: 200
 
 # Firewall configuration
 build_stream_firewall_port: "{{ build_stream_port }}/tcp"
 
 # Messages
-build_stream_omnia_core_not_running_msg: "omnia_core container must be running before deploying omnia_build_stream"
-build_stream_dockerhub_pull_success_msg: "Successfully pulled {{ build_stream_image_name }}:{{ build_stream_image_tag }} from Docker Hub"
 build_stream_deployment_success_msg: "omnia_build_stream container deployed successfully"

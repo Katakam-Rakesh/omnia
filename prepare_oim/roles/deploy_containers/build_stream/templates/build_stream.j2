@@ -20,6 +20,8 @@ Environment=PULP_BASE_URL={{ pulp_base_url }}
 Environment=PULP_USERNAME=admin
 Environment=PULP_PASSWORD={{ pulp_password }}
 Environment=PULP_VERIFY_SSL=true
+Environment=REQUESTS_CA_BUNDLE=/etc/pulp/certs/pulp_webserver.crt
+Environment=SSL_CERT_FILE=/etc/pulp/certs/pulp_webserver.crt
 
 # Volume mounts (shared from omnia_core)
 Volume={{ omnia_path }}/omnia:/opt/omnia{{ selinux_option }}
