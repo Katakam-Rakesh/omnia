@@ -55,10 +55,8 @@ def ParseCatalog(file_path: str, schema_path: str = _DEFAULT_SCHEMA_PATH) -> Cat
             file_path,
         )
         logger.debug(
-            "Catalog validation details for %s at %s: %s",
-            file_path,
+            "Catalog validation failed at path: %s",
             path,
-            exc.message,
         )
         raise
     data = catalog_json["Catalog"]

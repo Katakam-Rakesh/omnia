@@ -535,11 +535,6 @@ def get_functional_layer_roles_from_file(
             "JSON validation failed for %s",
             functional_layer_json_path,
         )
-        logger.debug(
-            "JSON validation details for %s: %s",
-            functional_layer_json_path,
-            exc.message,
-        )
         raise
     logger.info("JSON validation succeeded")
 
@@ -612,11 +607,6 @@ def get_package_list(
         logger.error(
             "JSON validation failed for %s",
             functional_layer_json_path,
-        )
-        logger.debug(
-            "JSON validation details for %s: %s",
-            functional_layer_json_path,
-            exc.message,
         )
         raise
     logger.info("JSON validation succeeded for %s", functional_layer_json_path)
@@ -800,12 +790,8 @@ if __name__ == "__main__":
 
         logger.info("Catalog Parser CLI completed for %s", args.catalog)
 
-    except FileNotFoundError as exc:
+    except FileNotFoundError:
         logger.error("File not found during processing")
-        logger.debug(
-            "File not found during processing: %s",
-            getattr(exc, "filename", str(exc)),
-        )
         sys.exit(ERROR_CODE_INPUT_NOT_FOUND)
     except ValidationError:
         sys.exit(ERROR_CODE_PROCESSING_ERROR)

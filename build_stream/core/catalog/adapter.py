@@ -452,12 +452,8 @@ if __name__ == "__main__":
         )
 
         logger.info("Adapter config generation completed for %s", args.catalog)
-    except FileNotFoundError as exc:
+    except FileNotFoundError:
         logger.error("File not found during processing")
-        logger.debug(
-            "File not found during processing: %s",
-            getattr(exc, "filename", str(exc)),
-        )
         sys.exit(ERROR_CODE_INPUT_NOT_FOUND)
     except ValidationError:
         sys.exit(ERROR_CODE_PROCESSING_ERROR)
