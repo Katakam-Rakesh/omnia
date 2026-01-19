@@ -45,7 +45,7 @@
 - name: Get metadata from omnia_core
   containers.podman.podman_container_exec:
     name: omnia_core
-    command: cat /opt/omnia/.data/oim_metadata.yml
+    command: cat {{ oim_metadata_file }}
   register: metadata_content
   changed_when: false
 
@@ -76,9 +76,8 @@
 
 - name: Display image pull result
   ansible.builtin.debug:
-    msg:
-      - "Successfully pulled image from Docker Hub"
-      - "Image: {{ build_stream_image_name }}:{{ build_stream_image_tag }}"
+    msg: "{{ build_stream_image_pull_success_msg }}"
+    verbosity: 2
   when: image_pull_result is succeeded
 
 # Create required directories
@@ -86,13 +85,13 @@
   ansible.builtin.file:
     path: "{{ build_stream_log_dir }}"
     state: directory
-    mode: '0755'
+    mode: "{{ build_stream_dir_mode }}"
 
 - name: Create SSL certificate directory
   ansible.builtin.file:
     path: "{{ build_stream_ssl_dir }}"
     state: directory
-    mode: '0755'
+    mode: "{{ build_stream_dir_mode }}"
 
 # Generate SSL certificates
 - name: Check if SSL certificates already exist
@@ -113,7 +112,7 @@
 - name: Set permissions on SSL certificates
   ansible.builtin.file:
     path: "{{ item }}"
-    mode: '0600'
+    mode: "{{ build_stream_ssl_file_mode }}"
   loop:
     - "{{ build_stream_ssl_cert }}"
     - "{{ build_stream_ssl_key }}"
@@ -123,7 +122,7 @@
   ansible.builtin.template:
     src: build_stream.j2
     dest: "{{ build_stream_quadlet_path }}"
-    mode: '0644'
+    mode: "{{ build_stream_quadlet_file_mode }}"
 
 - name: Reload systemd to recognize Quadlet
   ansible.builtin.systemd:
@@ -173,9 +172,4 @@
 # Display deployment status
 - name: Display deployment status
   ansible.builtin.debug:
-    msg:
-      - "{{ build_stream_deployment_success_msg }}"
-      - "Container: {{ build_stream_container_name }}"
-      - "Image: {{ build_stream_image_name }}:{{ build_stream_image_tag }}"
-      - "Pulp Server: {{ pulp_base_url }}"
-      - "SSL Verification: Enabled (using REQUESTS_CA_BUNDLE and SSL_CERT_FILE)"
+    msg: "{{ build_stream_deployment_status_msg }}"
