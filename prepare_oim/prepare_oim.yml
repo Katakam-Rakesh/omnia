@@ -88,7 +88,7 @@
 - name: Deploy containers
   hosts: oim
   connection: ssh
-  gather_facts: true
+  gather_facts: false
   roles:
     - role: deploy_containers/common  # noqa:role-name[path]
       tags: always
