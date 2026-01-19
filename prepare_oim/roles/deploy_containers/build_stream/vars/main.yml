@@ -68,3 +68,8 @@ build_stream_deployment_status_msg:
   - "Container: {{ build_stream_container_name }}"
   - "Image: {{ build_stream_image_name }}:{{ build_stream_image_tag }}"
   - "Pulp Server: {{ pulp_base_url }}"
+build_stream_container_success_msg: "The {{ build_stream_container_name }} container has been successfully deployed."
+build_stream_container_failure_msg: |
+  The deployment of the {{ build_stream_container_name }} container has failed. To resolve this issue,
+  please run the utility/oim_cleanup.yml playbook to clean up any existing OIM resources.
+  After the cleanup, you can re-run the original playbook to deploy the {{ build_stream_container_name }} container successfully.

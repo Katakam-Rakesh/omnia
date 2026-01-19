@@ -117,59 +117,70 @@
     - "{{ build_stream_ssl_cert }}"
     - "{{ build_stream_ssl_key }}"
 
-# Deploy container using Quadlet
-- name: Create Quadlet service file
-  ansible.builtin.template:
-    src: build_stream.j2
-    dest: "{{ build_stream_quadlet_path }}"
-    mode: "{{ build_stream_quadlet_file_mode }}"
+# Deploy container using Quadlet and check deployment status
+- name: Deploy build_stream container and check deployment status
+  block:
+    - name: Create Quadlet service file
+      ansible.builtin.template:
+        src: build_stream.j2
+        dest: "{{ build_stream_quadlet_path }}"
+        mode: "{{ build_stream_quadlet_file_mode }}"
+      register: quadlet_out
 
-- name: Reload systemd to recognize Quadlet
-  ansible.builtin.systemd:
-    daemon_reexec: true
+    - name: Reload systemd if Quadlet changed
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: quadlet_out.changed # noqa: no-handler
 
-- name: Reload systemd daemon
-  ansible.builtin.systemd:
-    daemon_reload: true
+    - name: Enable and start build_stream service
+      ansible.builtin.systemd_service:
+        name: "{{ build_stream_container_name }}.service"
+        enabled: true
+        state: started
 
-- name: Start omnia_build_stream service
-  ansible.builtin.systemd:
-    name: "{{ build_stream_container_name }}.service"
-    state: started
-    enabled: true
+    # TODO: Uncomment when API server is implemented
+    # - name: Wait for container to be ready
+    #   ansible.builtin.pause:
+    #     seconds: "{{ container_ready_wait_seconds }}"
+    #
+    # - name: Verify API endpoint health
+    #   ansible.builtin.uri:
+    #     url: "{{ build_stream_health_endpoint }}"
+    #     method: GET
+    #     return_content: true
+    #     status_code: "{{ health_check_status_code }}"
+    #     validate_certs: false
+    #   register: health_check
+    #   retries: "{{ health_check_retries }}"
+    #   delay: "{{ health_check_delay }}"
+    #   until: health_check.status == health_check_status_code
 
-# TODO: Uncomment when API server is implemented
-# - name: Wait for container to be ready
-#   ansible.builtin.pause:
-#     seconds: "{{ container_ready_wait_seconds }}"
-#
-# - name: Verify API endpoint health
-#   ansible.builtin.uri:
-#     url: "{{ build_stream_health_endpoint }}"
-#     method: GET
-#     return_content: true
-#     status_code: "{{ health_check_status_code }}"
-#     validate_certs: false
-#   register: health_check
-#   retries: "{{ health_check_retries }}"
-#   delay: "{{ health_check_delay }}"
-#   until: health_check.status == health_check_status_code
+    - name: Configure firewall
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
 
-# Configure firewall
-- name: Ensure firewalld is running
-  ansible.builtin.systemd:
-    name: firewalld
-    state: started
-    enabled: true
+    - name: Open build_stream port in firewall
+      ansible.posix.firewalld:
+        port: "{{ build_stream_firewall_port }}"
+        permanent: true
+        state: enabled
+        immediate: true
 
-- name: Open build_stream port in firewall
-  ansible.posix.firewalld:
-    port: "{{ build_stream_firewall_port }}"
-    permanent: true
-    state: enabled
-    immediate: true
+    - name: Check if build_stream container is running after deployment
+      containers.podman.podman_container_info:
+        name: "{{ build_stream_container_name }}"
+      register: build_stream_container_status
 
-# Display deployment status
-- name: Display deployment status
-  ansible.builtin.debug:
-    msg: "{{ build_stream_deployment_status_msg }}"
+    - name: Notify user of build_stream container deployment status
+      ansible.builtin.debug:
+        msg: "{{ build_stream_container_success_msg }}"
+      when:
+        - build_stream_container_status.containers | length > 0
+        - build_stream_container_status.containers[0].State.Status == 'running'
+
+  rescue:
+    - name: Build_stream container deployment failed
+      ansible.builtin.fail:
+        msg: "{{ build_stream_container_failure_msg }}"
