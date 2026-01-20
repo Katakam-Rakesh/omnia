@@ -1,0 +1,34 @@
+# ===============================================================
+# omnia_build_stream Quadlet Service
+# FastAPI Service for Omnia Build Stream Automation
+# ===============================================================
+[Unit]
+Description=Omnia Build Stream FastAPI Container
+After=omnia_core.service
+Requires=omnia_core.service
+
+[Container]
+ContainerName={{ build_stream_container_name }}
+HostName={{ build_stream_container_name }}
+Image={{ build_stream_image_name }}:{{ build_stream_image_tag }}
+Network=host
+
+# Environment variables
+Environment=PULP_BASE_URL={{ pulp_base_url }}
+Environment=PULP_USERNAME=admin
+Environment=PULP_PASSWORD={{ pulp_password }}
+Environment=PULP_VERIFY_SSL=true
+Environment=REQUESTS_CA_BUNDLE=/etc/pulp/certs/pulp_webserver.crt
+Environment=SSL_CERT_FILE=/etc/pulp/certs/pulp_webserver.crt
+
+# Volume mounts (shared from omnia_core)
+Volume={{ omnia_path }}/omnia:/opt/omnia{{ selinux_option }}
+Volume={{ build_stream_log_dir }}:/var/log/omnia_build_stream{{ selinux_option }}
+Volume={{ build_stream_ssl_dir }}:/etc/ssl/omnia:ro{{ selinux_option }}
+Volume={{ pulp_certs_dir }}:/etc/pulp/certs:ro{{ selinux_option }}
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target

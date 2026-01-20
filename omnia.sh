@@ -204,7 +204,7 @@ cleanup_config(){
 
     # Remove the Omnia core configuration.
     echo -e "${BLUE} Removing Omnia core configuration.${NC}"
-    rm -rf $omnia_path/omnia/{hosts,input,log,pulp,provision,pcs,ssh_config,tmp,.data}
+    rm -rf $omnia_path/omnia/{hosts,input,log,pulp,provision,pcs,ssh_config,tmp,.data,build_stream}
 
     # Unmount the NFS shared path if the share option is NFS.
     if [ "$share_option" = "NFS" ] && [ "$nfs_type" = "external" ]; then

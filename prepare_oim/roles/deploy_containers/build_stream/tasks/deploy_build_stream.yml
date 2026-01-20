@@ -1,0 +1,186 @@
+# Copyright 2026 Dell Inc. or its subsidiaries. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+---
+
+# Check and remove existing build_stream container if running
+- name: Check if omnia_build_stream service exists
+  ansible.builtin.systemd:
+    name: "{{ build_stream_container_name }}.service"
+  register: build_stream_service_status
+  failed_when: false
+
+- name: Stop omnia_build_stream service if running
+  ansible.builtin.systemd:
+    name: "{{ build_stream_container_name }}.service"
+    state: stopped
+    enabled: false
+  when: build_stream_service_status.status is defined
+  failed_when: false
+
+- name: Check if omnia_build_stream container exists
+  containers.podman.podman_container_info:
+    name: "{{ build_stream_container_name }}"
+  register: existing_container_info
+  failed_when: false
+
+- name: Remove existing omnia_build_stream container
+  containers.podman.podman_container:
+    name: "{{ build_stream_container_name }}"
+    state: absent
+  when: existing_container_info.containers | length > 0
+
+# Get metadata and configuration
+- name: Get metadata from omnia_core
+  containers.podman.podman_container_exec:
+    name: omnia_core
+    command: cat {{ oim_metadata_file }}
+  register: metadata_content
+  changed_when: false
+
+- name: Extract configuration from metadata
+  ansible.builtin.set_fact:
+    omnia_path: "{{ metadata_content.stdout | regex_search('oim_shared_path:\\s*(\\S+)', '\\1') | first }}"
+    share_option: "{{ metadata_content.stdout | regex_search('omnia_share_option:\\s*(\\S+)', '\\1') | first | default('') }}"
+    nfs_type: "{{ metadata_content.stdout | regex_search('nfs_type:\\s*(\\S+)', '\\1') | first | default('') }}"
+    pulp_server_ip: "{{ hostvars['localhost']['admin_nic_ip'] }}"
+    pulp_password: "{{ hostvars['localhost']['pulp_password'] }}"
+  no_log: true
+
+- name: Set SELinux option for volume mounts
+  ansible.builtin.set_fact:
+    selinux_option: "{{ ':z' if (share_option != 'NFS' or nfs_type | default('') != 'external') else '' }}"
+
+- name: Set Pulp base URL
+  ansible.builtin.set_fact:
+    pulp_base_url: "https://{{ pulp_server_ip }}:2225"
+
+# Pull container image
+- name: Pull omnia_build_stream image from Docker Hub
+  containers.podman.podman_image:
+    name: "{{ build_stream_image_name }}"
+    tag: "{{ build_stream_image_tag }}"
+    state: present
+  register: image_pull_result
+
+- name: Display image pull result
+  ansible.builtin.debug:
+    msg: "{{ build_stream_image_pull_success_msg }}"
+    verbosity: 2
+  when: image_pull_result is succeeded
+
+# Create required directories
+- name: Create log directory for omnia_build_stream
+  ansible.builtin.file:
+    path: "{{ build_stream_log_dir }}"
+    state: directory
+    mode: "{{ build_stream_dir_mode }}"
+
+- name: Create SSL certificate directory
+  ansible.builtin.file:
+    path: "{{ build_stream_ssl_dir }}"
+    state: directory
+    mode: "{{ build_stream_dir_mode }}"
+
+# Generate SSL certificates
+- name: Check if SSL certificates already exist
+  ansible.builtin.stat:
+    path: "{{ build_stream_ssl_cert }}"
+  register: ssl_cert_stat
+
+- name: Generate self-signed SSL certificate
+  ansible.builtin.command: |
+    openssl req -x509 -newkey rsa:4096 -nodes -days {{ build_stream_ssl_days }}
+    -keyout {{ build_stream_ssl_key }}
+    -out {{ build_stream_ssl_cert }}
+    -subj "/C=US/ST=State/L=City/O=Omnia/CN={{ ansible_hostname }}"
+    -addext "subjectAltName=DNS:{{ ansible_hostname }},DNS:localhost,IP:{{ ansible_default_ipv4.address }}"
+  when: not ssl_cert_stat.stat.exists
+  changed_when: true
+
+- name: Set permissions on SSL certificates
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "{{ build_stream_ssl_file_mode }}"
+  loop:
+    - "{{ build_stream_ssl_cert }}"
+    - "{{ build_stream_ssl_key }}"
+
+# Deploy container using Quadlet and check deployment status
+- name: Deploy build_stream container and check deployment status
+  block:
+    - name: Create Quadlet service file
+      ansible.builtin.template:
+        src: build_stream.j2
+        dest: "{{ build_stream_quadlet_path }}"
+        mode: "{{ build_stream_quadlet_file_mode }}"
+      register: quadlet_out
+
+    - name: Reload systemd if Quadlet changed
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: quadlet_out.changed # noqa: no-handler
+
+    - name: Enable and start build_stream service
+      ansible.builtin.systemd_service:
+        name: "{{ build_stream_container_name }}.service"
+        enabled: true
+        state: started
+
+    # TODO: Uncomment when API server is implemented
+    # - name: Wait for container to be ready
+    #   ansible.builtin.pause:
+    #     seconds: "{{ container_ready_wait_seconds }}"
+    #
+    # - name: Verify API endpoint health
+    #   ansible.builtin.uri:
+    #     url: "{{ build_stream_health_endpoint }}"
+    #     method: GET
+    #     return_content: true
+    #     status_code: "{{ health_check_status_code }}"
+    #     validate_certs: false
+    #   register: health_check
+    #   retries: "{{ health_check_retries }}"
+    #   delay: "{{ health_check_delay }}"
+    #   until: health_check.status == health_check_status_code
+
+    - name: Configure firewall
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Open build_stream port in firewall
+      ansible.posix.firewalld:
+        port: "{{ build_stream_firewall_port }}"
+        permanent: true
+        state: enabled
+        immediate: true
+
+    - name: Check if build_stream container is running after deployment
+      containers.podman.podman_container_info:
+        name: "{{ build_stream_container_name }}"
+      register: build_stream_container_status
+
+    - name: Notify user of build_stream container deployment status
+      ansible.builtin.debug:
+        msg: "{{ build_stream_container_success_msg }}"
+      when:
+        - build_stream_container_status.containers | length > 0
+        - build_stream_container_status.containers[0].State.Status == 'running'
+
+  rescue:
+    - name: Build_stream container deployment failed
+      ansible.builtin.fail:
+        msg: "{{ build_stream_container_failure_msg }}"
