@@ -29,19 +29,13 @@ logger = logging.getLogger(__name__)
 class CatalogParseError(Exception):
     """Exception raised when catalog parsing fails."""
 
-    pass
-
 
 class InvalidFileFormatError(CatalogParseError):
     """Exception raised when the uploaded file has an invalid format."""
 
-    pass
-
 
 class InvalidJSONError(CatalogParseError):
     """Exception raised when the JSON content is invalid."""
-
-    pass
 
 
 @dataclass
@@ -53,7 +47,7 @@ class ParseResult:
     output_path: Optional[str] = None
 
 
-class ParseCatalogService:
+class ParseCatalogService:  # pylint: disable=too-few-public-methods
     """Service for parsing catalog files."""
 
     DEFAULT_OUTPUT_ROOT = "out/generator"

@@ -83,7 +83,7 @@ async def health_check() -> dict:
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
+async def global_exception_handler(request, exc):  # pylint: disable=unused-argument
     """Global exception handler for unhandled exceptions."""
     logger.exception("Unhandled exception occurred")
     return JSONResponse(

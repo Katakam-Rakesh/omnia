@@ -27,7 +27,7 @@ class ParseCatalogStatus(str, Enum):
     ERROR = "error"
 
 
-class ParseCatalogResponse(BaseModel):
+class ParseCatalogResponse(BaseModel):  # pylint: disable=too-few-public-methods
     """Response model for ParseCatalog API."""
 
     status: ParseCatalogStatus = Field(
@@ -61,7 +61,7 @@ class ParseCatalogResponse(BaseModel):
     }
 
 
-class ErrorResponse(BaseModel):
+class ErrorResponse(BaseModel):  # pylint: disable=too-few-public-methods
     """Standard error response model."""
 
     status: ParseCatalogStatus = ParseCatalogStatus.ERROR
