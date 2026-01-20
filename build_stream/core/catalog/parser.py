@@ -58,7 +58,7 @@ def ParseCatalog(file_path: str, schema_path: str = _DEFAULT_SCHEMA_PATH) -> Cat
             "Catalog validation failed at path: %s",
             path,
         )
-        raise
+        raise ValueError("Catalog validation failed") from None
     data = catalog_json["Catalog"]
 
     functional_packages = [
