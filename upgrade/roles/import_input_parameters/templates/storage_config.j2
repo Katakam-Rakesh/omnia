@@ -85,16 +85,27 @@
 # /mnt/scratch /mnted/sctratch nfs4 defaults,nofail,_netdev,x-systemd.after=cloud-init-network.service 0 0
 
 # /mnted/scratch/node001/var/loig/state  /var/log/state  none  bind  0  0
-{% set _nfs = storage_nfs_client_params | default([]) %}
-{% if _nfs %}
-mounts:
-{% for _entry in _nfs %}
-  - name: {{ _entry.nfs_name }}
-    source: "{{ _entry.server_ip | default('') }}:{{ _entry.server_share_path | default('') }}"
-    mount_point: {{ _entry.client_share_path }}
-    mount_opts: "{{ _entry.client_mount_options | default('nosuid,rw,sync,hard,intr') }}"
 
-{% endfor %}
+{% if slurm_nfs_client_params or k8s_nfs_client_params %}
+mounts:
+{% if slurm_nfs_client_params %}
+  - name: {{ slurm_nfs_client_params.nfs_name }}
+    source: "{{ slurm_nfs_client_params.server_ip | default('') }}:{{ slurm_nfs_client_params.server_share_path | default('') }}"
+    mount_point: {{ slurm_nfs_client_params.client_share_path }}
+    mount_opts: "{{ slurm_nfs_client_params.client_mount_options | default('nosuid,rw,sync,hard,intr') }}"
+    fs_type: "nfs"
+    mount_on_oim: true
+    functional_group_prefix: ["slurm", "login"]
+{% endif %}
+{% if k8s_nfs_client_params %}
+  - name: {{ k8s_nfs_client_params.nfs_name }}
+    source: "{{ k8s_nfs_client_params.server_ip | default('') }}:{{ k8s_nfs_client_params.server_share_path | default('') }}"
+    mount_point: {{ k8s_nfs_client_params.client_share_path }}
+    mount_opts: "{{ k8s_nfs_client_params.client_mount_options | default('nosuid,rw,sync,hard,intr') }}"
+    fs_type: "nfs"
+    mount_on_oim: true
+    functional_group_prefix: ["service_kube"]
+{% endif %}
 {% endif %}
 
 # -------------------------Mount Params (Reusable Profiles)---------------------------
