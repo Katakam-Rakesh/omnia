@@ -1075,7 +1075,7 @@
 
 {% if telemetry_enabled or ldms_support or ufm_telemetry_support%}
             echo "Applying Telemetry Kubernetes deployments"
-            /root/telemetry.sh
+            {{ k8s_client_mount_path }}/telemetry/telemetry.sh
 {% endif %}
 
             echo "Rollout and Restart coredns"
