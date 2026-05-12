@@ -34,6 +34,7 @@
     _ufm_detailed_config: "{{ telemetry_config.ufm_configuration }}"
 
 - name: Load UFM credentials from omnia_config_credentials.yml
+  when: _ufm_config.metrics_enabled | default(false) | bool
   block:
     - name: Check if credentials file is encrypted
       ansible.builtin.command: >-
@@ -66,7 +67,7 @@
     - name: Set CA certificate content for template processing
       ansible.builtin.set_fact:
         ufm_ca_cert_content: "{{ _ufm_ca_cert_content.content | default('') }}"
-      when: 
+      when:
         - _ufm_detailed_config.tls_mode | default('self_signed') == 'ca_signed'
         - _ufm_detailed_config.ufm_ca_cert_path | default('') | trim != ''
 
@@ -84,10 +85,11 @@
       ansible.builtin.command: >-
         ansible-vault encrypt "{{ hostvars['localhost']['input_project_dir'] }}/omnia_config_credentials.yml"
         --vault-password-file "{{ hostvars['localhost']['input_project_dir'] }}/.omnia_config_credentials_key"
-      when: "'$ANSIBLE_VAULT;' in _ufm_cred_file_content.stdout"
+      when: 
+        - "'$ANSIBLE_VAULT;' in _ufm_cred_file_content.stdout"
+        - _ufm_config.metrics_enabled | default(false) | bool
       changed_when: false
       delegate_to: localhost
-  when: _ufm_config.metrics_enabled | default(false) | bool
 
 # --- Validate UFM telemetry inputs ---
 # Only run validation when UFM telemetry is enabled
@@ -110,17 +112,16 @@
 - name: Validate UFM TLS mode
   ansible.builtin.fail:
     msg: "{{ ufm_tls_mode_invalid_msg }}"
-  when: 
+  when:
     - _ufm_config.metrics_enabled | default(false) | bool
     - _ufm_detailed_config.tls_mode | default('self_signed') not in ['self_signed', 'ca_signed']
 
 - name: Validate UFM auth mode
   ansible.builtin.fail:
     msg: "{{ ufm_auth_mode_invalid_msg }}"
-  when: 
+  when:
     - _ufm_config.metrics_enabled | default(false) | bool
     - _ufm_detailed_config.auth_mode | default('basic') not in ['basic', 'none']
-
 
 - name: Validate UFM credentials when auth_mode is basic
   ansible.builtin.fail:
@@ -131,7 +132,7 @@
     - (ufm_username | default('') | trim == '') or (ufm_password | default('') | trim == '')
 
 - name: Validate CA certificate file when tls_mode is ca_signed
-  when: 
+  when:
     - _ufm_config.metrics_enabled | default(false) | bool
     - _ufm_detailed_config.tls_mode | default('self_signed') == 'ca_signed'
   block:
@@ -188,34 +189,6 @@
     verbosity: 2
   when: _ufm_config.metrics_enabled | default(false) | bool
 
-# --- Validate UFM endpoint connectivity (best-effort, warn only) ---
-
-- name: Test UFM endpoint reachability
-  ansible.builtin.uri:
-    url: "{{ 'https' if _ufm_detailed_config.tls_mode | default('self_signed') == 'ca_signed' else 'http' }}://{{ _ufm_detailed_config.ufm_endpoint }}:{{ _ufm_detailed_config.ufm_metrics_port | default(9090) }}/metrics"
-    method: GET
-    validate_certs: false
-    timeout: "{{ ufm_endpoint_test_timeout }}"
-    status_code: [200, 401, 403]
-  register: _ufm_reachability
-  failed_when: false
-  delegate_to: localhost
-  when: _ufm_config.metrics_enabled | default(false) | bool
-
-- name: Display UFM endpoint reachability status
-  ansible.builtin.debug:
-    msg: >-
-      UFM endpoint {{ 'https' if _ufm_detailed_config.tls_mode | default('self_signed') == 'ca_signed' else 'http' }}://{{ _ufm_detailed_config.ufm_endpoint }}:{{ _ufm_detailed_config.ufm_metrics_port | default(9090) }}
-      is {{ 'reachable' if _ufm_reachability.status | default(-1) | int in [200, 401, 403] else 'NOT reachable' }}
-      (HTTP {{ _ufm_reachability.status | default('N/A') }}).
-  when: _ufm_config.metrics_enabled | default(false) | bool
-
-- name: Warn if UFM endpoint is unreachable
-  ansible.builtin.debug:
-    msg: "{{ ufm_endpoint_unreachable_msg }}"
-  when: 
-    - _ufm_config.metrics_enabled | default(false) | bool
-    - _ufm_reachability.status | default(-1) | int not in [200, 401, 403]
 
 # UFM telemetry resources are now deployed via Kustomize templates
 # Secret and Grafana dashboard ConfigMap are created through:
