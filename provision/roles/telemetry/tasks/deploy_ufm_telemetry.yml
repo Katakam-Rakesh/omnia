@@ -200,8 +200,7 @@
   ansible.builtin.debug:
     msg:
       - "UFM telemetry integration complete"
-      - >-
-        Endpoint: {{ 'https' if _ufm_detailed_config.tls_mode | default('self_signed') == 'ca_signed' else 'http' }}://{{ _ufm_detailed_config.ufm_endpoint }}:{{ _ufm_detailed_config.ufm_metrics_port | default(9001) }}
+      - "UFM endpoint: {{ _ufm_detailed_config.ufm_endpoint }}:{{ _ufm_detailed_config.ufm_metrics_port | default(9001) }}"
       - "TLS mode: {{ _ufm_detailed_config.tls_mode | default('self_signed') }}"
       - "Auth mode: {{ _ufm_detailed_config.auth_mode | default('basic') }}"
       - "Scrape interval: {{ _ufm_detailed_config.scrape_interval | default('30s') }}"
