@@ -11,10 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
----
 
-- name: Upgrade cluster tasks
-  hosts: localhost
-  connection: local
-  roles:
-    - role: upgrade_cluster
+"""
+Upgrade Module Utilities
+
+This package contains utilities for managing upgrade operations:
+- Hop chain calculations
+- Software configuration updates
+- Component JSON repository updates
+"""
