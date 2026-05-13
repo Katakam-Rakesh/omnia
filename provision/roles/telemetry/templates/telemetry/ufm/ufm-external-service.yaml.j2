@@ -27,7 +27,6 @@ spec:
   ports:
     - name: metrics
       port: {{ telemetry_config.ufm_configuration.ufm_metrics_port | default(9001) }}
-      protocol: TCP
   clusterIP: None
 
 ---
@@ -42,5 +41,4 @@ subsets:
     ports:
       - name: metrics
         port: {{ telemetry_config.ufm_configuration.ufm_metrics_port | default(9001) }}
-        protocol: TCP
 {% endif %}
