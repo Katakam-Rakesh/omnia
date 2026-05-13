@@ -26,7 +26,6 @@ from collections import Counter
 import yaml
 import ansible.module_utils.input_validation.common_utils.data_fetch as fetch
 from ansible.module_utils.input_validation.validation_flows import csi_driver_validation
-from ansible.module_utils.input_validation.validation_flows import powerscale_authorization_validation
 import ansible.module_utils.input_validation.common_utils.data_validation as validate
 from ansible.module_utils.input_validation.common_utils import (
     config,
@@ -725,6 +724,28 @@ def validate_storage_config(
     
     # Validate duplicate mount points per functional group and group across mounts and powervault_config
     errors.extend(_validate_duplicate_mount_points(data))
+    
+    # Validate s3_configurations: endpoint_url is required when provider is "powerscale", must be empty when provider is "minio"
+    if "s3_configurations" in data:
+        s3_config = data["s3_configurations"]
+        provider = s3_config.get("provider", "")
+        endpoint_url = s3_config.get("endpoint_url", "")
+        if provider == "powerscale" and not endpoint_url:
+            errors.append(
+                create_error_msg(
+                    "storage_config",
+                    "s3_configurations.endpoint_url",
+                    "endpoint_url is required when provider is 'powerscale'. Please provide a valid S3 endpoint URL (e.g., https://10.43.1.11:9021)."
+                )
+            )
+        elif provider == "minio" and endpoint_url:
+            errors.append(
+                create_error_msg(
+                    "storage_config",
+                    "s3_configurations.endpoint_url",
+                    "endpoint_url must be empty when provider is 'minio'. The MinIO endpoint is auto-configured locally."
+                )
+            )
     
     return errors
 
@@ -1542,15 +1563,6 @@ def validate_k8s(data, admin_networks, softwares, ha_config, tag_names, errors,
                                 )
                             )
                         csi_driver_validation.validate_powerscale_secret_and_values_file(csi_secret_file_path,csi_values_file_path, errors, input_file_path)
-
-                # PowerScale Authorization validation
-                input_dir = os.path.dirname(input_file_path)
-                software_config_file_path = os.path.join(input_dir, "software_config.json")
-                config_paths = get_config_file_paths(input_dir, data, software_config_file_path)
-
-                powerscale_authorization_validation.validate_powerscale_authorization(
-                    kluster, softwares, input_file_path, config_paths, logger, errors
-                )
 
 def validate_omnia_config(
         input_file_path,
