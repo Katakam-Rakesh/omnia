@@ -204,4 +204,5 @@
       - "TLS mode: {{ _ufm_detailed_config.tls_mode | default('self_signed') }}"
       - "Auth mode: {{ _ufm_detailed_config.auth_mode | default('basic') }}"
       - "Scrape interval: {{ _ufm_detailed_config.scrape_interval | default('30s') }}"
+    verbosity: 2
   when: _ufm_config.metrics_enabled | default(false) | bool
