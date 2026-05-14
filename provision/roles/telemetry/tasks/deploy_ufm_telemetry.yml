@@ -33,64 +33,6 @@
     _ufm_config: "{{ telemetry_config.telemetry_sources.ufm }}"
     _ufm_detailed_config: "{{ telemetry_config.ufm_configuration }}"
 
-- name: Load UFM credentials from omnia_config_credentials.yml
-  when: _ufm_config.metrics_enabled | default(false) | bool
-  block:
-    - name: Check if credentials file is encrypted
-      ansible.builtin.command: >-
-        cat "{{ hostvars['localhost']['input_project_dir'] }}/omnia_config_credentials.yml"
-      changed_when: false
-      register: _ufm_cred_file_content
-      delegate_to: localhost
-      no_log: true
-
-    - name: Decrypt credentials file if encrypted
-      ansible.builtin.command: >-
-        ansible-vault decrypt "{{ hostvars['localhost']['input_project_dir'] }}/omnia_config_credentials.yml"
-        --vault-password-file "{{ hostvars['localhost']['input_project_dir'] }}/.omnia_config_credentials_key"
-      when: "'$ANSIBLE_VAULT;' in _ufm_cred_file_content.stdout"
-      changed_when: false
-      delegate_to: localhost
-
-    - name: Include credentials and extract UFM credentials
-      ansible.builtin.include_vars:
-        file: "{{ hostvars['localhost']['input_project_dir'] }}/omnia_config_credentials.yml"
-        name: _omnia_creds
-      no_log: true
-
-    - name: Set UFM credentials as facts for template processing
-      ansible.builtin.set_fact:
-        ufm_username: "{{ _omnia_creds.ufm_username | default('') }}"
-        ufm_password: "{{ _omnia_creds.ufm_password | default('') }}"
-      no_log: true
-
-    - name: Set CA certificate content for template processing
-      ansible.builtin.set_fact:
-        ufm_ca_cert_content: "{{ _ufm_ca_cert_content.content | default('') }}"
-      when:
-        - _ufm_detailed_config.tls_mode | default('self_signed') == 'ca_signed'
-        - _ufm_detailed_config.ufm_ca_cert_path | default('') | trim != ''
-
-    - name: Debug UFM credentials and file path
-      ansible.builtin.debug:
-        msg:
-          - "Credentials file path: {{ hostvars['localhost']['input_project_dir'] }}/omnia_config_credentials.yml"
-          - "UFM username found: {{ _omnia_creds.ufm_username is defined }}"
-          - "UFM password found: {{ _omnia_creds.ufm_password is defined }}"
-          - "UFM username length: {{ _omnia_creds.ufm_username | default('') | length }}"
-          - "UFM password length: {{ _omnia_creds.ufm_password | default('') | length }}"
-          - "Input project dir: {{ hostvars['localhost']['input_project_dir'] }}"
-
-    - name: Re-encrypt credentials file if it was encrypted
-      ansible.builtin.command: >-
-        ansible-vault encrypt "{{ hostvars['localhost']['input_project_dir'] }}/omnia_config_credentials.yml"
-        --vault-password-file "{{ hostvars['localhost']['input_project_dir'] }}/.omnia_config_credentials_key"
-      when:
-        - "'$ANSIBLE_VAULT;' in _ufm_cred_file_content.stdout"
-        - _ufm_config.metrics_enabled | default(false) | bool
-      changed_when: false
-      delegate_to: localhost
-
 # --- Validate UFM telemetry inputs ---
 # Only run validation when UFM telemetry is enabled
 
@@ -129,7 +71,9 @@
   when:
     - _ufm_config.metrics_enabled | default(false) | bool
     - _ufm_detailed_config.auth_mode | default('basic') == 'basic'
-    - (ufm_username | default('') | trim == '') or (ufm_password | default('') | trim == '')
+    - >-
+      (hostvars['localhost']['ufm_username'] | default('') | trim == '') or
+      (hostvars['localhost']['ufm_password'] | default('') | trim == '')
 
 - name: Validate CA certificate file when tls_mode is ca_signed
   when:
@@ -171,6 +115,14 @@
     - _ufm_detailed_config.tls_mode | default('self_signed') == 'ca_signed'
     - _ufm_detailed_config.ufm_ca_cert_path | default('') | trim != ''
 
+- name: Set CA certificate content for template processing
+  ansible.builtin.set_fact:
+    ufm_ca_cert_content: "{{ _ufm_ca_cert_content.content | b64decode }}"
+  when:
+    - _ufm_ca_cert_content is defined
+    - _ufm_ca_cert_content is not skipped
+    - _ufm_ca_cert_content.content is defined
+
 - name: Display UFM Secret creation status
   ansible.builtin.debug:
     msg: "{{ ufm_secret_created_msg }}"
@@ -179,9 +131,9 @@
 
 
 # UFM telemetry resources are now deployed via Kustomize templates
-# Secret and Grafana dashboard ConfigMap are created through:
+# Secret and external-service ConfigMap are created through:
 # - templates/telemetry/ufm/ufm-telemetry-secret.yaml.j2
-# - templates/telemetry/ufm/grafana-dashboard-ufm.yaml.j2
+# - templates/telemetry/ufm/ufm-external-service.yaml.j2
 # These are processed in generate_telemetry_deployments.yml and applied via kubectl apply -k
 
 - name: Display UFM integration summary
