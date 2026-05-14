@@ -12,9 +12,13 @@
           "package_id_11",
           "package_id_12",
           "package_id_13",
-          "package_id_18",
+          "package_id_14",
+          "package_id_15",
+          "package_id_16",
+          "package_id_17",
           "package_id_2",
-          "package_id_23",
+          "package_id_22",
+          "package_id_27",
           "package_id_3",
           "package_id_4",
           "package_id_5",
@@ -32,10 +36,14 @@
           "package_id_11",
           "package_id_12",
           "package_id_13",
-          "package_id_18",
+          "package_id_14",
+          "package_id_15",
+          "package_id_16",
+          "package_id_17",
           "package_id_2",
-          "package_id_23",
-          "package_id_24",
+          "package_id_22",
+          "package_id_27",
+          "package_id_28",
           "package_id_3",
           "package_id_4",
           "package_id_5",
@@ -57,11 +65,11 @@
           "package_id_15",
           "package_id_16",
           "package_id_17",
+          "package_id_18",
+          "package_id_19",
           "package_id_2",
-          "package_id_24",
-          "package_id_25",
-          "package_id_26",
-          "package_id_27",
+          "package_id_20",
+          "package_id_21",
           "package_id_28",
           "package_id_3",
           "package_id_4",
@@ -80,12 +88,16 @@
           "package_id_11",
           "package_id_12",
           "package_id_13",
-          "package_id_18",
-          "package_id_19",
+          "package_id_14",
+          "package_id_15",
+          "package_id_16",
+          "package_id_17",
           "package_id_2",
-          "package_id_20",
-          "package_id_21",
           "package_id_22",
+          "package_id_23",
+          "package_id_24",
+          "package_id_25",
+          "package_id_26",
           "package_id_3",
           "package_id_4",
           "package_id_5",
@@ -361,6 +373,102 @@
         ]
       },
       "package_id_8": {
+        "Name": "iscsi-initiator-utils",
+        "SupportedOS": [
+          {
+            "Name": "RHEL",
+            "Version": "10.0"
+          }
+        ],
+        "Architecture": [
+          "aarch64",
+          "x86_64"
+        ],
+        "Type": "rpm",
+        "Sources": [
+          {
+            "Architecture": "aarch64",
+            "RepoName": "baseos"
+          },
+          {
+            "Architecture": "x86_64",
+            "RepoName": "baseos"
+          }
+        ]
+      },
+      "package_id_9": {
+        "Name": "device-mapper-multipath",
+        "SupportedOS": [
+          {
+            "Name": "RHEL",
+            "Version": "10.0"
+          }
+        ],
+        "Architecture": [
+          "aarch64",
+          "x86_64"
+        ],
+        "Type": "rpm",
+        "Sources": [
+          {
+            "Architecture": "aarch64",
+            "RepoName": "baseos"
+          },
+          {
+            "Architecture": "x86_64",
+            "RepoName": "baseos"
+          }
+        ]
+      },
+      "package_id_10": {
+        "Name": "sg3_utils",
+        "SupportedOS": [
+          {
+            "Name": "RHEL",
+            "Version": "10.0"
+          }
+        ],
+        "Architecture": [
+          "aarch64",
+          "x86_64"
+        ],
+        "Type": "rpm",
+        "Sources": [
+          {
+            "Architecture": "aarch64",
+            "RepoName": "baseos"
+          },
+          {
+            "Architecture": "x86_64",
+            "RepoName": "baseos"
+          }
+        ]
+      },
+      "package_id_11": {
+        "Name": "lsscsi",
+        "SupportedOS": [
+          {
+            "Name": "RHEL",
+            "Version": "10.0"
+          }
+        ],
+        "Architecture": [
+          "aarch64",
+          "x86_64"
+        ],
+        "Type": "rpm",
+        "Sources": [
+          {
+            "Architecture": "aarch64",
+            "RepoName": "baseos"
+          },
+          {
+            "Architecture": "x86_64",
+            "RepoName": "baseos"
+          }
+        ]
+      },
+      "package_id_12": {
         "Name": "imb",
         "SupportedOS": [
           {
@@ -384,7 +492,7 @@
           }
         ]
       },
-      "package_id_9": {
+      "package_id_13": {
         "Name": "osu-micro-benchmarks",
         "SupportedOS": [
           {
@@ -408,7 +516,7 @@
           }
         ]
       },
-      "package_id_10": {
+      "package_id_14": {
         "Name": "likwid",
         "SupportedOS": [
           {
@@ -432,7 +540,7 @@
           }
         ]
       },
-      "package_id_11": {
+      "package_id_15": {
         "Name": "geopm",
         "SupportedOS": [
           {
@@ -456,7 +564,7 @@
           }
         ]
       },
-      "package_id_12": {
+      "package_id_16": {
         "Name": "papi",
         "SupportedOS": [
           {
@@ -480,7 +588,7 @@
           }
         ]
       },
-      "package_id_13": {
+      "package_id_17": {
         "Name": "sionlib",
         "SupportedOS": [
           {
@@ -504,7 +612,7 @@
           }
         ]
       },
-      "package_id_14": {
+      "package_id_18": {
         "Name": "slurm-slurmctld",
         "SupportedOS": [
           {
@@ -528,7 +636,7 @@
           }
         ]
       },
-      "package_id_15": {
+      "package_id_19": {
         "Name": "slurm-slurmdbd",
         "SupportedOS": [
           {
@@ -552,7 +660,7 @@
           }
         ]
       },
-      "package_id_16": {
+      "package_id_20": {
         "Name": "python3-PyMySQL",
         "SupportedOS": [
           {
@@ -576,7 +684,7 @@
           }
         ]
       },
-      "package_id_17": {
+      "package_id_21": {
         "Name": "mariadb-server",
         "SupportedOS": [
           {
@@ -600,7 +708,7 @@
           }
         ]
       },
-      "package_id_18": {
+      "package_id_22": {
         "Name": "slurm-slurmd",
         "SupportedOS": [
           {
@@ -624,7 +732,7 @@
           }
         ]
       },
-      "package_id_19": {
+      "package_id_23": {
         "Name": "slurm-pam_slurm",
         "SupportedOS": [
           {
@@ -648,7 +756,7 @@
           }
         ]
       },
-      "package_id_20": {
+      "package_id_24": {
         "Name": "kernel-devel",
         "SupportedOS": [
           {
@@ -672,7 +780,7 @@
           }
         ]
       },
-      "package_id_21": {
+      "package_id_25": {
         "Name": "kernel-headers",
         "SupportedOS": [
           {
@@ -696,7 +804,7 @@
           }
         ]
       },
-      "package_id_22": {
+      "package_id_26": {
         "Name": "nvhpc_2025_2511_Linux_aarch64_cuda_13.0",
         "SupportedOS": [
           {
@@ -715,7 +823,7 @@
           }
         ]
       },
-      "package_id_23": {
+      "package_id_27": {
         "Name": "slurm",
         "SupportedOS": [
           {
@@ -739,7 +847,7 @@
           }
         ]
       },
-      "package_id_24": {
+      "package_id_28": {
         "Name": "msr-safe",
         "SupportedOS": [
           {
@@ -755,82 +863,6 @@
           {
             "Architecture": "x86_64",
             "Uri": "https://github.com/llnl/msr-safe/archive/refs/tags/v1.7.0.tar.gz"
-          }
-        ]
-      },
-      "package_id_25": {
-        "Name": "iscsi-initiator-utils",
-        "SupportedOS": [
-          {
-            "Name": "RHEL",
-            "Version": "10.0"
-          }
-        ],
-        "Architecture": [
-          "x86_64"
-        ],
-        "Type": "rpm",
-        "Sources": [
-          {
-            "Architecture": "x86_64",
-            "RepoName": "baseos"
-          }
-        ]
-      },
-      "package_id_26": {
-        "Name": "device-mapper-multipath",
-        "SupportedOS": [
-          {
-            "Name": "RHEL",
-            "Version": "10.0"
-          }
-        ],
-        "Architecture": [
-          "x86_64"
-        ],
-        "Type": "rpm",
-        "Sources": [
-          {
-            "Architecture": "x86_64",
-            "RepoName": "baseos"
-          }
-        ]
-      },
-      "package_id_27": {
-        "Name": "sg3_utils",
-        "SupportedOS": [
-          {
-            "Name": "RHEL",
-            "Version": "10.0"
-          }
-        ],
-        "Architecture": [
-          "x86_64"
-        ],
-        "Type": "rpm",
-        "Sources": [
-          {
-            "Architecture": "x86_64",
-            "RepoName": "baseos"
-          }
-        ]
-      },
-      "package_id_28": {
-        "Name": "lsscsi",
-        "SupportedOS": [
-          {
-            "Name": "RHEL",
-            "Version": "10.0"
-          }
-        ],
-        "Architecture": [
-          "x86_64"
-        ],
-        "Type": "rpm",
-        "Sources": [
-          {
-            "Architecture": "x86_64",
-            "RepoName": "baseos"
           }
         ]
       },

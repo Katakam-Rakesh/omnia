@@ -130,29 +130,43 @@ default:
       }
 
       # Refresh input files from latest commit (retry support)
+      # Copied from build pipeline (.gitlab-ci-build.yml) - proven to work
       refresh_input_files() {
         if [ -z "${GITLAB_API_TOKEN:-}" ]; then
-          echo "  [REFRESH] WARN: GITLAB_API_TOKEN not set, skipping refresh" >&2
+          echo "  [REFRESH] GITLAB_API_TOKEN not set -- skipping file refresh" >&2
           return 0
         fi
+
         echo "  [REFRESH] Fetching latest config files from branch ${CI_COMMIT_REF_NAME}..."
+
         _REFRESH_COUNT=0
-        for _FNAME in local_repo_config.yml network_spec.yml provision_config.yml pxe_mapping_file.csv \
-               storage_config.yml telemetry_config.yml security_config.yml \
-               high_availability_config.yml omnia_config.yml build_stream_config.yml; do
-          _FPATH="${CI_PROJECT_DIR}/input/${_FNAME}"
-          _ENCODED_PATH=$(printf '%s' "input/${_FNAME}" | jq -sRr @uri)
-          _API_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/files/${_ENCODED_PATH}/raw?ref=${CI_COMMIT_REF_NAME}"
-          if curl -f -s -H "PRIVATE-TOKEN: ${GITLAB_API_TOKEN}" "${_API_URL}" -o "${_FPATH}.tmp" 2>/dev/null; then
-            mv "${_FPATH}.tmp" "${_FPATH}"
+        _REFRESH_FAILED=0
+        for _RF_FNAME in local_repo_config.yml network_spec.yml provision_config.yml \
+               pxe_mapping_file.csv storage_config.yml telemetry_config.yml \
+               security_config.yml high_availability_config.yml omnia_config.yml \
+               build_stream_config.yml; do
+
+          # URL-encode the file path (input/<filename>)
+          _RF_ENCODED_PATH=$(printf '%s' "input/${_RF_FNAME}" | sed 's|/|%2F|g')
+
+          _RF_HTTP_CODE=$(curl -s -o "/tmp/_rf_${_RF_FNAME}" -w "%{http_code}" \
+            --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" \
+            -H "PRIVATE-TOKEN: ${GITLAB_API_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/files/${_RF_ENCODED_PATH}/raw?ref=${CI_COMMIT_REF_NAME}" \
+            --cacert "${CI_SERVER_TLS_CA_FILE}" 2>/dev/null)
+
+          if [ "$_RF_HTTP_CODE" = "200" ]; then
+            mkdir -p "${CI_PROJECT_DIR}/input"
+            cp "/tmp/_rf_${_RF_FNAME}" "${CI_PROJECT_DIR}/input/${_RF_FNAME}"
             _REFRESH_COUNT=$((_REFRESH_COUNT + 1))
-            echo "    [+] ${_FNAME}"
           else
-            rm -f "${_FPATH}.tmp"
+            # File may not exist in repo (optional config), not an error
+            _REFRESH_FAILED=$((_REFRESH_FAILED + 1))
           fi
+          rm -f "/tmp/_rf_${_RF_FNAME}"
         done
-        echo "  [REFRESH] Updated ${_REFRESH_COUNT} files from latest commit"
-        return 0
+
+        echo "  [REFRESH] Updated ${_REFRESH_COUNT} files from latest commit (${_REFRESH_FAILED} not found/skipped)"
       }
 
 # ---------------------------------------------------------------------------
