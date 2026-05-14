@@ -110,7 +110,7 @@ telemetry_sources:
   ldms:
     # Enable or disable LDMS metrics collection
     # Default: true
-    metrics_enabled: true
+    metrics_enabled: {{ telemetry_ldms_metrics_enabled | default(telemetry_default_ldms_metrics_enabled) | bool | ternary('true', 'false') }}
 
     # LDMS only supports Kafka collection (no direct victoria_metrics path)
     # Vector-LDMS bridge consumes from Kafka and routes to victoria_metrics
@@ -171,7 +171,7 @@ telemetry_bridges:
     # Enable or disable Vector-LDMS bridge
     # Requires: telemetry_sources.ldms.enabled = true
     # Default: true
-    metrics_enabled: true
+    metrics_enabled: {{ telemetry_vector_ldms_metrics_enabled | default(telemetry_default_vector_ldms_metrics_enabled) | bool | ternary('true', 'false') }}
 
   # --------------------------------------------------------------------------
   # Vector-OME — Kafka-to-Victoria bridge for OME metrics and logs
@@ -182,16 +182,16 @@ telemetry_bridges:
     # Enable or disable Vector-OME metrics routing
     # Requires: OME to be configured with kafka
     # Default: true
-    metrics_enabled: true
+    metrics_enabled: {{ telemetry_vector_ome_metrics_enabled | default(telemetry_default_vector_ome_metrics_enabled) | bool | ternary('true', 'false') }}
 
     # Enable or disable Vector-OME logs routing
     # Default: true
-    logs_enabled: true
+    logs_enabled: {{ telemetry_vector_ome_logs_enabled | default(telemetry_default_vector_ome_logs_enabled) | bool | ternary('true', 'false') }}
 
     # Identifier used by Vector-OME for topic identification and routing.
     # Default: "ome" — internally used to match topics with the prefix (e.g., "^ome\\..*$")
     # Change only if your OME Kafka topics use a different prefix.
-    ome_identifier: "ome"
+    ome_identifier: "{{ telemetry_vector_ome_identifier | default('ome') }}"
 
 # ============================================================================
 # TELEMETRY SINKS (Storage Backends)

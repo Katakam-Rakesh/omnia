@@ -184,6 +184,12 @@
         | default(telemetry_default_ldms_sampler_configurations))
       }}
 
+- name: Normalize LDMS source metrics_enabled from backup
+  ansible.builtin.set_fact:
+    telemetry_ldms_metrics_enabled: >-
+      {{ (backup_telemetry_sources.ldms | default({})).metrics_enabled
+         | default(telemetry_default_ldms_metrics_enabled) }}
+
 - name: Normalize DCGM and PowerScale source values from backup
   ansible.builtin.set_fact:
     telemetry_dcgm_support: >-
@@ -198,6 +204,21 @@
       {{ (backup_telemetry_sources.powerscale | default({})).logs_enabled
          | default(backup_telemetry_powerscale_config.powerscale_log_enabled
          | default(telemetry_default_powerscale_log_enabled)) }}
+
+- name: Normalize bridge values from backup (2.2 format or defaults)
+  ansible.builtin.set_fact:
+    telemetry_vector_ldms_metrics_enabled: >-
+      {{ ((backup_telemetry_config.telemetry_bridges | default({})).vector_ldms | default({})).metrics_enabled
+         | default(telemetry_default_vector_ldms_metrics_enabled) }}
+    telemetry_vector_ome_metrics_enabled: >-
+      {{ ((backup_telemetry_config.telemetry_bridges | default({})).vector_ome | default({})).metrics_enabled
+         | default(telemetry_default_vector_ome_metrics_enabled) }}
+    telemetry_vector_ome_logs_enabled: >-
+      {{ ((backup_telemetry_config.telemetry_bridges | default({})).vector_ome | default({})).logs_enabled
+         | default(telemetry_default_vector_ome_logs_enabled) }}
+    telemetry_vector_ome_identifier: >-
+      {{ ((backup_telemetry_config.telemetry_bridges | default({})).vector_ome | default({})).ome_identifier
+         | default('ome') }}
 
 - name: Normalize PowerScale configuration values from backup
   ansible.builtin.set_fact:
@@ -216,9 +237,14 @@
   vars:
     telemetry_idrac_telemetry_support: "{{ telemetry_idrac_telemetry_support }}"
     telemetry_idrac_collection_targets: "{{ telemetry_idrac_collection_targets }}"
+    telemetry_ldms_metrics_enabled: "{{ telemetry_ldms_metrics_enabled }}"
     telemetry_dcgm_support: "{{ telemetry_dcgm_support }}"
     telemetry_powerscale_metrics_enabled: "{{ telemetry_powerscale_metrics_enabled }}"
     telemetry_powerscale_logs_enabled: "{{ telemetry_powerscale_logs_enabled }}"
+    telemetry_vector_ldms_metrics_enabled: "{{ telemetry_vector_ldms_metrics_enabled }}"
+    telemetry_vector_ome_metrics_enabled: "{{ telemetry_vector_ome_metrics_enabled }}"
+    telemetry_vector_ome_logs_enabled: "{{ telemetry_vector_ome_logs_enabled }}"
+    telemetry_vector_ome_identifier: "{{ telemetry_vector_ome_identifier }}"
     telemetry_victoria_persistence_size: "{{ telemetry_victoria_persistence_size }}"
     telemetry_victoria_retention_period: "{{ telemetry_victoria_retention_period }}"
     telemetry_additional_metric_remote_write_endpoints: "{{ telemetry_additional_metric_remote_write_endpoints }}"

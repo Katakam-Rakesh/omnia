@@ -159,6 +159,14 @@ msg_provision_config_missing: "provision_config.yml missing"
 msg_using_backup_provision_config: "Using backup provision_config.yml (backup not modified)"
 msg_pxe_mapping_file_path_missing: "pxe_mapping_file_path is mandatory"
 
+# PXE mapping file transformation messages
+msg_backup_pxe_mapping_file_missing: "{{ pxe_mapping_filename }} not found in backup at {{ backup_location }}/{{ pxe_mapping_filename }}"
+msg_using_backup_pxe_mapping_file: "Transforming {{ pxe_mapping_filename }} from backup at {{ backup_location }}/{{ pxe_mapping_filename }}"
+msg_pxe_mapping_file_empty: "{{ pxe_mapping_filename }} contains no valid rows (must have at least 9 columns: FUNCTIONAL_GROUP_NAME through BMC_IP)"
+msg_pxe_mapping_file_validation_failed: >
+  {{ pxe_mapping_filename }} validation failed - header must contain:
+  FUNCTIONAL_GROUP_NAME,GROUP_NAME,SERVICE_TAG,PARENT_SERVICE_TAG,HOSTNAME,ADMIN_MAC,ADMIN_IP,BMC_MAC,BMC_IP,IB_MAC,IB_IP
+
 # Storage config transformation messages
 msg_backup_storage_config_missing: "storage_config.yml not found in backup at {{ backup_location }}/storage_config.yml"
 msg_storage_config_missing: "storage_config.yml not found at {{ input_project_dir }}/storage_config.yml"
@@ -219,6 +227,16 @@ msg_restore_summary: |
   {{ restore_item.name }} restored from backup.
   Backup: {{ backup_location }}/{{ restore_item.name }}
   Target: {{ input_project_dir }}/{{ restore_item.name }}
+
+# Restore summary message for pxe_mapping_file transformation
+msg_pxe_mapping_file_transform_summary: |
+  {{ pxe_mapping_filename }} upgraded to 2.2 format.
+  Backup preserved at: {{ backup_location }}/{{ pxe_mapping_filename }}
+  Changes:
+  - Added IB_MAC column for InfiniBand MAC addresses (initialized as empty)
+  - Added IB_IP column for InfiniBand IP addresses (initialized as empty)
+  - Preserved all existing columns (FUNCTIONAL_GROUP_NAME through BMC_IP)
+  - NOTE: If using InfiniBand network, manually populate IB_MAC and IB_IP values
 
 # Restore summary message for network spec transformation
 msg_network_spec_transform_summary: |
@@ -344,11 +362,15 @@ telemetry_default_kafka_log_segment_bytes: 1073741824
 telemetry_default_ldms_agg_port: 6001
 telemetry_default_ldms_store_port: 6001
 telemetry_default_ldms_sampler_port: 10001
-telemetry_default_dcgm_support: true
+telemetry_default_dcgm_support: false
+telemetry_default_ldms_metrics_enabled: false
+telemetry_default_vector_ldms_metrics_enabled: false
+telemetry_default_vector_ome_metrics_enabled: false
+telemetry_default_vector_ome_logs_enabled: false
 telemetry_default_victoria_logs_storage_size: "8Gi"
 telemetry_default_victoria_logs_retention_period: 168
-telemetry_default_powerscale_support: true
-telemetry_default_powerscale_log_enabled: true
+telemetry_default_powerscale_support: false
+telemetry_default_powerscale_log_enabled: false
 telemetry_default_otel_collector_storage_size: "5Gi"
 telemetry_default_csm_observability_values_file_path: ""
 
@@ -406,7 +428,7 @@ mode_sensitive_file: '0600'
 # - Files where you want to preserve the backup values exactly
 #
 # DO NOT add files that require transformation (network_spec.yml, high_availability_config.yml, local_repo_config.yml,
-# provision_config.yml, software_config.json, telemetry_config.yml, user_registry_credential.yml)
+# provision_config.yml, storage_config.yml, omnia_config.yml, telemetry_config.yml, user_registry_credential.yml)
 # DO NOT add files that are newly generated (build_stream_config.yml, gitlab_config.yml, discovery_config.yml)
 restore_input_files:
   - name: software_config.json
@@ -415,6 +437,3 @@ restore_input_files:
   - name: security_config.yml
     mode: '0644'
     validate_cmd: "python3 -c \"import yaml; yaml.safe_load(open('{{ input_project_dir }}/security_config.yml','r'))\""
-  - name: pxe_mapping_file.csv
-    mode: '0644'
-    validate_cmd: ""
