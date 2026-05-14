@@ -83,7 +83,8 @@
               6.  local_repo_config.yml         - Preserved and validated
               7.  security_config.yml           - Restored from backup
               8.  software_config.json          - Restored from backup
-              9.  Credentials                   - Restored and re-encrypted
+              9.  storage_config.yml            - Preserved and validated
+              10. Credentials                   - Restored and re-encrypted
 
           ------------------------------------------------------------------------
           SECTION 2: REVIEW REQUIRED  (new parameters added in 2.2)
@@ -97,8 +98,9 @@
           File 2: storage_config.yml
               1.  nfs_client_params  is replaced by 'mounts' format
               2.  mount_params profiles  (nfs_default, vast_nfs, vast_rdma)
-              3.  functional_group_prefix, node_key, permissions, swap
-              4.  powervault_config  (now a list with mount_point)
+              3.  powervault_config  (now a list with mount_point)
+              4.  swap  (new swap configuration)
+              5.  s3_configurations  (new S3 storage configuration)
 
           File 3: telemetry_config.yml
               1.  Restructured to: sources, bridges, sinks architecture
