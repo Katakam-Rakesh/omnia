@@ -50,6 +50,7 @@
 # Notes:
 #   - Do not use Jinja variables in this configuration.
 #   - Omit SSL fields entirely if SSL is not in use.
+#   - Its a mandatory field in case of slurm_custom with name as 'slurm_custom'
 #   - Version-specific naming (e.g., 'kubernetes-v1-35', 'cri-o-v1-35') is used only for service_k8s
 #
 # 3. user_repo_url_aarch64

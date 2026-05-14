@@ -375,12 +375,12 @@ ADDITIONAL_LOG_ENDPOINTS_URL_INVALID_MSG = (
     "URL must start with 'http://' or 'https://'."
 )
 def powerscale_image_version_mismatch_msg(image_name, values_image, service_k8s_image):
-    """Returns error message when CSM values.yaml image version doesn't match service_k8s.json."""
+    """Returns error message when CSM values.yaml image version doesn't match service_k8s (versioned)."""
     return (
         f"Image version mismatch for '{image_name}': "
         f"CSM Observability values.yaml has '{values_image}' but "
-        f"service_k8s.json has '{service_k8s_image}'. "
-        f"Please update service_k8s.json to match the values.yaml version "
+        f"service_k8s (versioned) has '{service_k8s_image}'. "
+        f"Please update service_k8s (versioned) to match the values.yaml version "
         f"and re-run local_repo.yml to mirror the correct image to Pulp."
     )
 # pylint: enable=invalid-name

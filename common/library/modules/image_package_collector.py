@@ -245,7 +245,9 @@ def run_module():
     allowed_additional_subgroups = get_allowed_additional_subgroups(software_config) if additional_enabled else []
 
     # Versioned JSON file for service_k8s: service_k8s_v<version>.json
-    service_k8s_json = f"service_k8s_v{service_k8s_version}.json" if service_k8s_version else "service_k8s.json"
+    if not service_k8s_version:
+        module.fail_json(msg="service_k8s version not found in software_config.json")
+    service_k8s_json = f"service_k8s_v{service_k8s_version}.json"
 
     # pylint: disable=line-too-long
     # Functional group → json files mapping
