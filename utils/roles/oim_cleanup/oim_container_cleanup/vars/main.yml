@@ -158,6 +158,11 @@ build_stream_cleanup_directory:
 build_stream_container_name: omnia_build_stream
 playbook_watcher_service_file: "/etc/systemd/system/playbook_watcher.service"
 
+# Automation framework cleanup (Component 5 Validate Module Spec - Phase 2)
+automation_base_dir: "/opt/omnia/automation"
+automation_venv_dir: "{{ automation_base_dir }}/.venv"
+automation_config_file: "{{ automation_base_dir }}/omnia_test_config.yml"
+
 # Build stream cleanup failure message
 build_stream_cleanup_failure_msg:
   - "Build stream cleanup failed due to directory locks."

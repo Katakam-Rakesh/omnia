@@ -20,7 +20,8 @@ service_cluster_metadata_path: "/opt/omnia/.data/service_cluster_metadata.yml"
 metadata_perm: "0644"
 
 # Usage: read_software_config.yml
-k8s_packages_file: "{{ input_project_dir }}/config/x86_64/{{ software_config.cluster_os_type }}/{{ software_config.cluster_os_version }}/service_k8s.json"
+# Versioned JSON file: service_k8s_v<version>.json (e.g., service_k8s_v1.35.1.json)
+k8s_packages_file: "{{ input_project_dir }}/config/x86_64/{{ software_config.cluster_os_type }}/{{ software_config.cluster_os_version }}/service_k8s_v{{ hostvars['localhost']['service_k8s_version'] }}.json" # noqa: yaml[line-length]
 
 # Usage: secrets_creation.yml
 mysqldb_secrets_name: mysqldb-credentials
@@ -68,7 +69,7 @@ kafka:
   service_name: "kafka-headless"
   lb_service_name: "kafka-loadbalancer"
   container_port1: 9093
-  # Kafka images from service_k8s.json
+  # Kafka images from service_k8s_v<version>.json
   operator_image: "{{ telemetry_images['strimzi/operator'] | default('quay.io/strimzi/operator:0.48.0') }}"
   kafka_image: "{{ telemetry_images['strimzi/kafka'] | default('quay.io/strimzi/kafka:0.48.0-kafka-4.1.0') }}"
   bridge_image: "{{ telemetry_images['strimzi/kafka-bridge'] | default('quay.io/strimzi/kafka-bridge:0.33.1') }}"
@@ -98,8 +99,8 @@ kafka:
     #   name: "{{ ome_identifier }}.logs"
     #   partitions: 2
 
-# Dynamic image configuration from service_k8s.json
-# Images and versions are read dynamically from input/config/x86_64/rhel/10.0/service_k8s.json
+# Dynamic image configuration from service_k8s_v<version>.json
+# Images and versions are read dynamically from input/config/x86_64/rhel/10.0/service_k8s_v<version>.json
 telemetry_images: "{{ service_k8s_images | default({}) }}"
 
 # Usage: victoriametric_deployment.yml
@@ -345,7 +346,7 @@ vmagent:
 strmzi_kafka_tarball_url: "{{ offline_tarball_path }}/{{ strimzi_kafka_pkg }}/{{ strimzi_kafka_pkg }}.tar.gz"
 
 # Victoria Metrics operator tarball configuration
-# Version must match the Helm chart entry in service_k8s.json (victoria-metrics-operator-0.59.3)
+# Version must match the Helm chart entry in service_k8s (versioned) (victoria-metrics-operator-0.59.3)
 # Required for VLCluster and VLAgent CRD support (minimum v0.59.0)
 victoria_operator_pkg: "victoria-metrics-operator-0.59.3"
 victoria_operator_tarball_url: "{{ offline_tarball_path }}/{{ victoria_operator_pkg }}/{{ victoria_operator_pkg }}.tar.gz"
@@ -537,7 +538,7 @@ ps_telemetry_prepared_msg: >-
   Values file: {{ k8s_client_mount_path }}/karavi-observability/csm_metrics_values.yaml
   Deployment will occur during cloud-init (PXE boot) on the control plane node.
 ps_cert_manager_pkg_msg: >-
-  cert-manager package from service_k8s.json: {{ cert_manager_package | default('') }} ({{ cert_manager_chart_tgz | default('') }})
+  cert-manager package from service_k8s (versioned): {{ cert_manager_package | default('') }} ({{ cert_manager_chart_tgz | default('') }})
 ps_cert_manager_required_msg: "cert-manager dependency download: REQUIRED"
 ps_cert_manager_skipped_msg: "cert-manager dependency download: SKIPPED (disabled in values file)"
 ps_cert_manager_staged_msg: >-
@@ -554,11 +555,11 @@ ps_cert_manager_extract_fail_msg: >-
 ps_cert_manager_missing_msg: >-
   cert-manager Helm chart ({{ cert_manager_chart_tgz | default('') }}) was not found in
   {{ karavi_helm_chart_path }}/charts/. This chart is required for TLS certificate
-  management. Ensure the Jetstack cert-manager entry exists in service_k8s.json
+  management. Ensure the Jetstack cert-manager entry exists in service_k8s (versioned)
   and run local_repo.yml to download it to Pulp.
 ps_dependency_fail_msg: >-
   Failed to get karavi-observability dependencies from Pulp.
-  Ensure the following entries exist in service_k8s.json and run local_repo.yml:
+  Ensure the following entries exist in service_k8s (versioned) and run local_repo.yml:
     - karavi-observability (git)
     - helm-charts (git)
     - {{ cert_manager_package | default('cert-manager') }} (tarball from Jetstack Helm repo)
@@ -573,7 +574,7 @@ ps_dependency_fail_msg: >-
 # Architecture:
 #   Kafka topics → Vector pods → vmagent-vector/vlagent-vector → Victoria sinks
 # Vector image (shared by all Vector pods: vector-ldms, vector-ome)
-# Registered in service_k8s.json
+# Registered in service_k8s (versioned)
 vector:
   image: "{{ telemetry_images['timberio/vector'] | default('docker.io/timberio/vector:0.54.0-debian') }}"
 
