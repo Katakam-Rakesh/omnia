@@ -252,12 +252,13 @@ def get_config_file_paths(input_dir, data, software_config_file_path):
 
     Returns:
         dict: Dictionary containing resolved file paths:
-              - service_k8s_json_path: Path to service_k8s.json
+              - service_k8s_json_path: Path to service_k8s (versioned)
               - csi_driver_powerscale_json_path: Path to csi_driver_powerscale.json
     """
     # Try reading cluster_os_type/version from data first, then from software_config.json
     cluster_os_type = data.get("cluster_os_type", "rhel")
     cluster_os_version = data.get("cluster_os_version", "10.0")
+    service_k8s_version = None
 
     if os.path.exists(software_config_file_path):
         try:
@@ -265,11 +266,20 @@ def get_config_file_paths(input_dir, data, software_config_file_path):
                 sc_data = json.load(scf)
                 cluster_os_type = sc_data.get("cluster_os_type", cluster_os_type)
                 cluster_os_version = sc_data.get("cluster_os_version", cluster_os_version)
+                # Extract service_k8s version from software_config.json
+                for sw in sc_data.get("softwares", []):
+                    if sw.get("name") == "service_k8s" and sw.get("version"):
+                        service_k8s_version = sw["version"]
+                        break
         except (json.JSONDecodeError, IOError):
             pass
 
     config_base_path = os.path.join(input_dir, "config", "x86_64", cluster_os_type, cluster_os_version)
-    service_k8s_json_path = os.path.join(config_base_path, "service_k8s.json")
+    # Use versioned service_k8s file - version is required
+    if not service_k8s_version:
+        raise ValueError("service_k8s version not found in software_config.json")
+    service_k8s_json = f"service_k8s_v{service_k8s_version}.json"
+    service_k8s_json_path = os.path.join(config_base_path, service_k8s_json)
     csi_driver_powerscale_json_path = os.path.join(config_base_path, "csi_driver_powerscale.json")
 
     return {
