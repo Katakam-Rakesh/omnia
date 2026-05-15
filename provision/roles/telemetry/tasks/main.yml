@@ -41,6 +41,8 @@
       (telemetry_config.telemetry_sources.ldms.metrics_enabled | default(false) | bool) or
       (telemetry_config.telemetry_sources.powerscale.metrics_enabled | default(false) | bool) or
       (telemetry_config.telemetry_sources.powerscale.logs_enabled | default(false) | bool) or
+      (telemetry_config.telemetry_sources.ufm.metrics_enabled | default(false) | bool) or
+      (telemetry_config.telemetry_sources.ufm.logs_enabled | default(false) | bool) or
       ldms_support | default(false) | bool
   block:
     - name: Set NFS info fact
@@ -122,11 +124,7 @@
 - name: Generate telemetry deployment script
   ansible.builtin.include_tasks: generate_telemetry_script.yml
   when:
-    - >-
-      (telemetry_config.telemetry_sources.idrac.metrics_enabled | default(false) | bool) or
-      (telemetry_config.telemetry_sources.ldms.metrics_enabled | default(false) | bool) or
-      (telemetry_config.telemetry_sources.powerscale.metrics_enabled | default(false) | bool) or
-      ldms_support | default(false) | bool
+    - telemetry_enabled | default(false) | bool
   tags:
     - telemetry_deployment
 
