@@ -252,12 +252,13 @@ def get_config_file_paths(input_dir, data, software_config_file_path):
 
     Returns:
         dict: Dictionary containing resolved file paths:
-              - service_k8s_json_path: Path to service_k8s.json
+              - service_k8s_json_path: Path to service_k8s (versioned)
               - csi_driver_powerscale_json_path: Path to csi_driver_powerscale.json
     """
     # Try reading cluster_os_type/version from data first, then from software_config.json
     cluster_os_type = data.get("cluster_os_type", "rhel")
     cluster_os_version = data.get("cluster_os_version", "10.0")
+    service_k8s_version = None
 
     if os.path.exists(software_config_file_path):
         try:
@@ -265,11 +266,20 @@ def get_config_file_paths(input_dir, data, software_config_file_path):
                 sc_data = json.load(scf)
                 cluster_os_type = sc_data.get("cluster_os_type", cluster_os_type)
                 cluster_os_version = sc_data.get("cluster_os_version", cluster_os_version)
+                # Extract service_k8s version from software_config.json
+                for sw in sc_data.get("softwares", []):
+                    if sw.get("name") == "service_k8s" and sw.get("version"):
+                        service_k8s_version = sw["version"]
+                        break
         except (json.JSONDecodeError, IOError):
             pass
 
     config_base_path = os.path.join(input_dir, "config", "x86_64", cluster_os_type, cluster_os_version)
-    service_k8s_json_path = os.path.join(config_base_path, "service_k8s.json")
+    # Use versioned service_k8s file - version is required
+    if not service_k8s_version:
+        raise ValueError("service_k8s version not found in software_config.json")
+    service_k8s_json = f"service_k8s_v{service_k8s_version}.json"
+    service_k8s_json_path = os.path.join(config_base_path, service_k8s_json)
     csi_driver_powerscale_json_path = os.path.join(config_base_path, "csi_driver_powerscale.json")
 
     return {
@@ -559,8 +569,11 @@ def validate_telemetry_config(
     # =========================================================================
     # Vector-LDMS bridge can only be enabled when LDMS source is enabled
     vector_ldms_enabled = vector_ldms.get("metrics_enabled", False)
+    vector_ome_metrics_enabled = vector_ome.get("metrics_enabled", False)
+    vector_ome_logs_enabled = vector_ome.get("logs_enabled", False)
     ldms_source_enabled = ldms_source.get("metrics_enabled", False)
     
+    # Validation 1: Vector-LDMS requires LDMS source to be enabled
     if vector_ldms_enabled and not ldms_source_enabled:
         errors.append(create_error_msg(
             "telemetry_bridges.vector_ldms.metrics_enabled",
@@ -579,6 +592,172 @@ def validate_telemetry_config(
             f"ldms_source.metrics_enabled={ldms_source_enabled}"
         )
     
+    # Validation 2: If LDMS source is enabled, Vector-LDMS bridge must also be enabled
+    # (LDMS only supports Kafka collection, requires Vector bridge to reach VictoriaMetrics)
+    if ldms_source_enabled and not vector_ldms_enabled:
+        errors.append(create_error_msg(
+            "telemetry_sources.ldms.metrics_enabled",
+            "true",
+            "LDMS source is enabled but Vector-LDMS bridge is disabled. "
+            "LDMS metrics can only reach VictoriaMetrics via the Vector-LDMS bridge. "
+            "If you want to check LDMS Metrics on VicotriaMetircs then:"
+            "Set telemetry_bridges.vector_ldms.metrics_enabled to true in telemetry_config.yml"
+        ))
+        logger.error(
+            "LDMS source enabled without Vector-LDMS bridge: "
+            f"ldms_source.metrics_enabled={ldms_source_enabled}, "
+            f"vector_ldms.metrics_enabled={vector_ldms_enabled}"
+        )
+    
+    # # Validation 3: Verify Kafka collection target for LDMS
+    # ldms_collection_targets = ldms_source.get("collection_targets", [])
+    # if ldms_source_enabled and 'kafka' not in ldms_collection_targets:
+    #     errors.append(create_error_msg(
+    #         "telemetry_sources.ldms.collection_targets",
+    #         str(ldms_collection_targets),
+    #         "LDMS source requires 'kafka' in collection_targets. "
+    #         "LDMS only supports Kafka-based collection."
+    #     ))
+    #     logger.error(
+    #         f"LDMS collection_targets missing 'kafka': {ldms_collection_targets}"
+    #     )
+    
+    # Validation 3: Log Vector-OME bridge status
+    if vector_ome_metrics_enabled or vector_ome_logs_enabled:
+        logger.info(
+            "Vector-OME bridge validation: "
+            f"metrics_enabled={vector_ome_metrics_enabled}, "
+            f"logs_enabled={vector_ome_logs_enabled}"
+        )
+    
+    # =========================================================================
+    # Validate additional_metric_remote_write_endpoints (victoria_metrics)
+    # =========================================================================
+    victoria_metrics_sink = telemetry_sinks.get("victoria_metrics", {})
+    additional_metric_endpoints = victoria_metrics_sink.get(
+        "additional_metric_remote_write_endpoints", []
+    )
+    if additional_metric_endpoints and isinstance(additional_metric_endpoints, list):
+        if len(additional_metric_endpoints) > 5:
+            logger.warning(
+                f"More than 5 additional_metric_remote_write_endpoints "
+                f"configured ({len(additional_metric_endpoints)}). "
+                "This may impact performance."
+            )
+        for idx, endpoint in enumerate(additional_metric_endpoints):
+            if not isinstance(endpoint, dict):
+                continue
+            url = endpoint.get("url", "")
+            if not url or not isinstance(url, str):
+                errors.append(create_error_msg(
+                    f"telemetry_sinks.victoria_metrics.additional_metric_remote_write_endpoints[{idx}].url",
+                    url,
+                    en_us_validation_msg.ADDITIONAL_METRIC_ENDPOINTS_URL_EMPTY_MSG
+                ))
+            elif (not url.startswith("http://") and
+                  not url.startswith("https://")):
+                errors.append(create_error_msg(
+                    f"telemetry_sinks.victoria_metrics.additional_metric_remote_write_endpoints[{idx}].url",
+                    url,
+                    en_us_validation_msg.ADDITIONAL_METRIC_ENDPOINTS_URL_INVALID_MSG
+                ))
+
+    # =========================================================================
+    # Validate additional_log_write_endpoints (victoria_logs)
+    # =========================================================================
+    victoria_logs_sink = telemetry_sinks.get("victoria_logs", {})
+    additional_log_endpoints = victoria_logs_sink.get(
+        "additional_log_write_endpoints", []
+    )
+    if additional_log_endpoints and isinstance(additional_log_endpoints, list):
+        if len(additional_log_endpoints) > 5:
+            logger.warning(
+                f"More than 5 additional_log_write_endpoints "
+                f"configured ({len(additional_log_endpoints)}). "
+                "This may impact performance."
+            )
+        for idx, endpoint in enumerate(additional_log_endpoints):
+            if not isinstance(endpoint, dict):
+                continue
+            url = endpoint.get("url", "")
+            if not url or not isinstance(url, str):
+                errors.append(create_error_msg(
+                    f"telemetry_sinks.victoria_logs.additional_log_write_endpoints[{idx}].url",
+                    url,
+                    en_us_validation_msg.ADDITIONAL_LOG_ENDPOINTS_URL_EMPTY_MSG
+                ))
+            elif (not url.startswith("http://") and
+                  not url.startswith("https://")):
+                errors.append(create_error_msg(
+                    f"telemetry_sinks.victoria_logs.additional_log_write_endpoints[{idx}].url",
+                    url,
+                    en_us_validation_msg.ADDITIONAL_LOG_ENDPOINTS_URL_INVALID_MSG
+                ))
+
+    # =========================================================================
+    # Validate additional_metric_remote_write_endpoints (victoria_metrics)
+    # =========================================================================
+    victoria_metrics_sink = telemetry_sinks.get("victoria_metrics", {})
+    additional_metric_endpoints = victoria_metrics_sink.get(
+        "additional_metric_remote_write_endpoints", []
+    )
+    if additional_metric_endpoints and isinstance(additional_metric_endpoints, list):
+        if len(additional_metric_endpoints) > 5:
+            logger.warning(
+                f"More than 5 additional_metric_remote_write_endpoints "
+                f"configured ({len(additional_metric_endpoints)}). "
+                "This may impact performance."
+            )
+        for idx, endpoint in enumerate(additional_metric_endpoints):
+            if not isinstance(endpoint, dict):
+                continue
+            url = endpoint.get("url", "")
+            if not url or not isinstance(url, str):
+                errors.append(create_error_msg(
+                    f"telemetry_sinks.victoria_metrics.additional_metric_remote_write_endpoints[{idx}].url",
+                    url,
+                    en_us_validation_msg.ADDITIONAL_METRIC_ENDPOINTS_URL_EMPTY_MSG
+                ))
+            elif (not url.startswith("http://") and
+                  not url.startswith("https://")):
+                errors.append(create_error_msg(
+                    f"telemetry_sinks.victoria_metrics.additional_metric_remote_write_endpoints[{idx}].url",
+                    url,
+                    en_us_validation_msg.ADDITIONAL_METRIC_ENDPOINTS_URL_INVALID_MSG
+                ))
+
+    # =========================================================================
+    # Validate additional_log_write_endpoints (victoria_logs)
+    # =========================================================================
+    victoria_logs_sink = telemetry_sinks.get("victoria_logs", {})
+    additional_log_endpoints = victoria_logs_sink.get(
+        "additional_log_write_endpoints", []
+    )
+    if additional_log_endpoints and isinstance(additional_log_endpoints, list):
+        if len(additional_log_endpoints) > 5:
+            logger.warning(
+                f"More than 5 additional_log_write_endpoints "
+                f"configured ({len(additional_log_endpoints)}). "
+                "This may impact performance."
+            )
+        for idx, endpoint in enumerate(additional_log_endpoints):
+            if not isinstance(endpoint, dict):
+                continue
+            url = endpoint.get("url", "")
+            if not url or not isinstance(url, str):
+                errors.append(create_error_msg(
+                    f"telemetry_sinks.victoria_logs.additional_log_write_endpoints[{idx}].url",
+                    url,
+                    en_us_validation_msg.ADDITIONAL_LOG_ENDPOINTS_URL_EMPTY_MSG
+                ))
+            elif (not url.startswith("http://") and
+                  not url.startswith("https://")):
+                errors.append(create_error_msg(
+                    f"telemetry_sinks.victoria_logs.additional_log_write_endpoints[{idx}].url",
+                    url,
+                    en_us_validation_msg.ADDITIONAL_LOG_ENDPOINTS_URL_INVALID_MSG
+                ))
+
     # =========================================================================
     # Validate PowerScale telemetry configuration
     # =========================================================================

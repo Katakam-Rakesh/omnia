@@ -99,6 +99,7 @@ input_file_inventory = {
     "prepare_oim": [
         files["network_spec"],
         files["software_config"],
+        files["storage_config"],
         files["build_stream_config"]
     ],
     # "high_availability": [files["high_availability_config"]],
@@ -131,7 +132,7 @@ expected_versions = {
     "openmpi": "5.0.8",
     "csi_driver_powerscale": "v2.15.0",
     "rocm": "6.3.1",
-    "service_k8s": "1.34.1"
+    "service_k8s": "1.35.1"
 }
 
 # All of the passwords fields

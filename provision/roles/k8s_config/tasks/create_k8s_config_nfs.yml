@@ -197,7 +197,7 @@
 - name: Include local repo access variable file
   ansible.builtin.include_vars: "{{ local_repo_access_config_file }}"
 
-- name: Load service_k8s.json
+- name: Load service_k8s_v<version>.json
   ansible.builtin.set_fact:
     k8s_packages_json: "{{ lookup('file', k8s_packages_file) | from_json }}"
 
@@ -284,6 +284,6 @@
     mode: "{{ file_mode }}"
   become: true
 
-- name: Include PowerScale CSI dependency tasks
+- name: Get CSI PowerScale driver dependencies
+  when: hostvars['localhost']['csi_driver_powerscale_support']
   ansible.builtin.include_tasks: get_powerscale_dependencies.yml
-  when: hostvars['localhost']['csi_driver_powerscale_support'] | bool

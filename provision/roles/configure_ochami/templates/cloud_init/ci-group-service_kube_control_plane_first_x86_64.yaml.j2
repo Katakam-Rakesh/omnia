@@ -321,20 +321,6 @@
               ipAddressPools:
               - first-pool
 
-{% if telemetry_enabled %}
-        - path: /root/telemetry.sh
-          owner: root:root
-          permissions: '0755'
-          content: |
-            {{ lookup('template', 'templates/telemetry/telemetry.sh.j2') | indent(12) }}
-{% endif %}
-{% for pv_entry in cloud_init_groups_dict[functional_group_name].powervault_scripts | default([]) %}
-        - path: /usr/local/bin/setup_iscsi_storage_{{ pv_entry.name }}.sh
-          permissions: '{{ file_mode_755 }}'
-          content: |
-            {{ pv_entry.content | indent(12) }}
-{% endfor %}
-
       runcmd:
         - /usr/local/bin/set-ssh.sh
         - "systemctl enable chronyd"
@@ -975,7 +961,6 @@
 
                 echo "Done updating poll rate."
 
-
                 if [ "$POWERSCALE_DEPLOYMENT_FAILED" -eq 0 ]; then
                   echo "===== Running CSI PowerScale installation script ====="
                   INSTALL_SCRIPT="/opt/omnia/csi-driver-powerscale/csi-powerscale/dell-csi-helm-installer/csi-install.sh"
@@ -1076,19 +1061,7 @@
 
 {% if telemetry_enabled %}
             echo "Applying Telemetry Kubernetes deployments"
-            /root/telemetry.sh
-{% endif %}
-
-{% if powerscale_log_enabled | default(false) | bool %}
-            echo "===== Configuring PowerScale Syslog Forwarding ====="
-            if [ -f "{{ k8s_client_mount_path }}/telemetry/deployments/configure_powerscale_syslog.sh" ]; then
-              echo "Running PowerScale syslog configuration script..."
-              bash "{{ k8s_client_mount_path }}/telemetry/deployments/configure_powerscale_syslog.sh" 2>&1
-              echo "PowerScale syslog configuration completed (exit code: $?)"
-            else
-              echo "WARNING: PowerScale syslog configuration script not found."
-              echo "Ensure deploy_powerscale_logs.yml ran successfully during provisioning."
-            fi
+            {{ k8s_client_mount_path }}/telemetry/telemetry.sh
 {% endif %}
 
             echo "Rollout and Restart coredns"

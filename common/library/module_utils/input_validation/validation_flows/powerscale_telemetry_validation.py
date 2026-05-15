@@ -191,7 +191,7 @@ def validate_powerscale_telemetry_config(
                             ))
 
                     # Cross-validate image versions
-                    # between values.yaml and service_k8s.json
+                    # between values.yaml and service_k8s (versioned)
                     service_k8s_json_path = config_paths.get(
                         "service_k8s_json_path", ""
                     )
@@ -204,7 +204,7 @@ def validate_powerscale_telemetry_config(
                             with open(service_k8s_json_path, 'r', encoding='utf-8') as sk8s_f:
                                 service_k8s_data = json.load(sk8s_f)
 
-                            # Build lookup: package -> tag from service_k8s.json
+                            # Build lookup: package -> tag from service_k8s (versioned)
                             sk8s_images = {}
                             for entry in service_k8s_data.get(
                                 "service_k8s", {}
@@ -237,7 +237,7 @@ def validate_powerscale_telemetry_config(
                             sidecar_proxy = karavi_auth.get("sidecarProxy", {})
                             if sidecar_proxy and sidecar_proxy.get("image"):
                                 # csm-authorization-sidecar is in
-                                # csi_driver_powerscale.json, not service_k8s.json
+                                # csi_driver_powerscale.json, not service_k8s (versioned)
                                 if (csi_driver_powerscale_json_path and
                                         os.path.exists(csi_driver_powerscale_json_path)):
                                     try:
@@ -305,18 +305,18 @@ def validate_powerscale_telemetry_config(
                                         )
                                 else:
                                     logger.warning(
-                                        f"Image {sk8s_key} not found in service_k8s.json, "
+                                        f"Image {sk8s_key} not found in service_k8s file, "
                                         f"skipping version check"
                                     )
 
                         except (json.JSONDecodeError, IOError) as sk8s_err:
                             logger.warning(
-                                f"Could not read service_k8s.json for "
+                                f"Could not read service_k8s file for "
                                 f"image version validation: {sk8s_err}"
                             )
                     else:
                         logger.warning(
-                            f"service_k8s.json not found at {service_k8s_json_path}, "
+                            f"service_k8s file not found at {service_k8s_json_path}, "
                             f"skipping image version validation"
                         )
 
@@ -341,49 +341,3 @@ def validate_powerscale_telemetry_config(
                 powerscale_collection_targets,
                 en_us_validation_msg.POWERSCALE_VICTORIA_LOGS_REQUIRED_MSG
             ))
-        # Validate syslog_source_ips when logs_enabled (optional field)
-        # If empty, rsyslog will accept from any source IP
-        syslog_source_ips = powerscale_config.get(
-            "syslog_source_ips", []
-        )
-        # Only validate IP format if provided (not required)
-        if syslog_source_ips and len(syslog_source_ips) > 0:
-            for idx, ip_str in enumerate(syslog_source_ips):
-                try:
-                    ipaddress.ip_address(str(ip_str).strip())
-                except ValueError:
-                    errors.append(create_error_msg(
-                        f"powerscale_configurations.syslog_source_ips[{idx}]",
-                        ip_str,
-                        en_us_validation_msg.POWERSCALE_SYSLOG_SOURCE_IP_INVALID_MSG
-                    ))
-
-    # Validate additional_remote_write_endpoints
-    # (applies to metrics deployment)
-    additional_endpoints = powerscale_config.get(
-        "additional_remote_write_endpoints", []
-    )
-    if additional_endpoints and isinstance(additional_endpoints, list):
-        if len(additional_endpoints) > 5:
-            logger.warning(
-                f"More than 5 additional_remote_write_endpoints "
-                f"configured ({len(additional_endpoints)}). "
-                "This may impact performance."
-            )
-        for idx, endpoint in enumerate(additional_endpoints):
-            if not isinstance(endpoint, dict):
-                continue
-            url = endpoint.get("url", "")
-            if not url or not isinstance(url, str):
-                errors.append(create_error_msg(
-                    f"powerscale_configurations.additional_remote_write_endpoints[{idx}].url",
-                    url,
-                    en_us_validation_msg.POWERSCALE_ADDITIONAL_ENDPOINTS_URL_EMPTY_MSG
-                ))
-            elif (not url.startswith("http://") and
-                  not url.startswith("https://")):
-                errors.append(create_error_msg(
-                    f"powerscale_configurations.additional_remote_write_endpoints[{idx}].url",
-                    url,
-                    en_us_validation_msg.POWERSCALE_ADDITIONAL_ENDPOINTS_URL_INVALID_MSG
-                ))

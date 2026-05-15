@@ -20,7 +20,8 @@ service_cluster_metadata_path: "/opt/omnia/.data/service_cluster_metadata.yml"
 metadata_perm: "0644"
 
 # Usage: read_software_config.yml
-k8s_packages_file: "{{ input_project_dir }}/config/x86_64/{{ software_config.cluster_os_type }}/{{ software_config.cluster_os_version }}/service_k8s.json"
+# Versioned JSON file: service_k8s_v<version>.json (e.g., service_k8s_v1.35.1.json)
+k8s_packages_file: "{{ input_project_dir }}/config/x86_64/{{ software_config.cluster_os_type }}/{{ software_config.cluster_os_version }}/service_k8s_v{{ hostvars['localhost']['service_k8s_version'] }}.json" # noqa: yaml[line-length]
 
 # Usage: secrets_creation.yml
 mysqldb_secrets_name: mysqldb-credentials
@@ -68,7 +69,7 @@ kafka:
   service_name: "kafka-headless"
   lb_service_name: "kafka-loadbalancer"
   container_port1: 9093
-  # Kafka images from service_k8s.json
+  # Kafka images from service_k8s_v<version>.json
   operator_image: "{{ telemetry_images['strimzi/operator'] | default('quay.io/strimzi/operator:0.48.0') }}"
   kafka_image: "{{ telemetry_images['strimzi/kafka'] | default('quay.io/strimzi/kafka:0.48.0-kafka-4.1.0') }}"
   bridge_image: "{{ telemetry_images['strimzi/kafka-bridge'] | default('quay.io/strimzi/kafka-bridge:0.33.1') }}"
@@ -84,9 +85,22 @@ kafka:
     ldms:
       name: "ldms"
       consumer_group: "ldms-consumer-group"
+    # # OME topics (provisioned when Vector-OME bridge is enabled)
+    # ome_events:
+    #   name: "{{ ome_identifier }}.events"
+    #   partitions: 3
+    # ome_alerts:
+    #   name: "{{ ome_identifier }}.alerts"
+    #   partitions: 2
+    # ome_inventory:
+    #   name: "{{ ome_identifier }}.inventory"
+    #   partitions: 2
+    # ome_logs:
+    #   name: "{{ ome_identifier }}.logs"
+    #   partitions: 2
 
-# Dynamic image configuration from service_k8s.json
-# Images and versions are read dynamically from input/config/x86_64/rhel/10.0/service_k8s.json
+# Dynamic image configuration from service_k8s_v<version>.json
+# Images and versions are read dynamically from input/config/x86_64/rhel/10.0/service_k8s_v<version>.json
 telemetry_images: "{{ service_k8s_images | default({}) }}"
 
 # Usage: victoriametric_deployment.yml
@@ -97,6 +111,8 @@ victoria:
   service_name: "victoria-loadbalancer"
   container_port: 8443
   image: "{{ telemetry_images['victoriametrics/victoria-metrics'] | default('victoriametrics/victoria-metrics:v1.128.0') }}"
+  vmsingle:
+    replicas: 2
 
 # VictoriaMetrics Cluster Configuration
 # Deployment mode is controlled by victoria_deployment_mode variable (default: cluster)
@@ -107,9 +123,23 @@ victoria_cluster:
   # true = cluster mode, false = single-node mode
   enabled: "{{ true if victoria_deployment_mode == 'cluster' else false }}"
   tls_enabled: true   # Set to true to enable TLS for cluster components
+  # Health probe and timing configuration
+  termination_grace_period: 120
+  startup_probe:
+    initial_delay: 30
+    period: 10
+    failure_threshold: 30
+    timeout: 5
+  readiness_probe:
+    initial_delay: 15
+    period: 5
+    failure_threshold: 10
+    timeout: 5
+  toleration_seconds: 5
   # VMStorage: Stores raw data and returns query results
   vmstorage:
     replicas: 3
+    replication_factor: 2  # Data redundancy: each metric written to 2 of 3 nodes
     image: "{{ telemetry_images['victoriametrics/vmstorage'] | default('victoriametrics/vmstorage:v1.128.0-cluster') }}"
     dedup_min_scrape_interval: "1m"  # Deduplication interval
     resources:
@@ -148,7 +178,7 @@ victoria_cluster:
         cpu: "1000m"
 
   vmagent:
-    replicas: 1
+    replicas: 2
     image: "{{ telemetry_images['victoriametrics/vmagent'] | default('victoriametrics/vmagent:v1.128.0') }}"
     resources:
       requests:
@@ -178,6 +208,18 @@ victoria_logs_cluster:
       limits:
         memory: "2Gi"
         cpu: "1000m"
+    termination_grace_period: 120
+    startup_probe:
+      initial_delay: 30
+      period: 10
+      failure_threshold: 30
+      timeout: 5
+    readiness_probe:
+      initial_delay: 15
+      period: 5
+      failure_threshold: 10
+      timeout: 5
+    toleration_seconds: 5
 
   # vlinsert: Log ingestion gateway (Deployment managed by operator via VLCluster CR)
   vlinsert:
@@ -191,6 +233,17 @@ victoria_logs_cluster:
       limits:
         memory: "1Gi"
         cpu: "1000m"
+    liveness_probe:
+      initial_delay: 30
+      period: 30
+      failure_threshold: 3
+      timeout: 5
+    readiness_probe:
+      initial_delay: 5
+      period: 10
+      failure_threshold: 3
+      timeout: 5
+    termination_grace_period: 30
 
   # vlselect: Log query gateway (Deployment managed by operator via VLCluster CR)
   vlselect:
@@ -206,9 +259,21 @@ victoria_logs_cluster:
 
   # VLAgent: Platform-managed log forwarding agent (Deployment managed by operator via VLAgent CR)
   vlagent:
-    replicas: 1
+    replicas: 2
     image: "{{ telemetry_images['victoriametrics/vlagent'] | default('docker.io/victoriametrics/vlagent:v1.49.0') }}"
     pvc_size: "5Gi"   # Buffer storage for retry during vlinsert unavailability
+    termination_grace_period: 30
+    liveness_probe:
+      initial_delay: 30
+      period: 30
+      failure_threshold: 3
+      timeout: 5
+    readiness_probe:
+      initial_delay: 5
+      period: 10
+      failure_threshold: 3
+      timeout: 5
+    toleration_seconds: 5
     resources:
       requests:
         memory: "128Mi"
@@ -216,19 +281,6 @@ victoria_logs_cluster:
       limits:
         memory: "512Mi"
         cpu: "250m"
-
-# VictoriaLogs ports (operator v0.66.1 defaults)
-# Note: VictoriaMetrics operator uses these default ports and ignores custom port specifications
-# will uncomment after verify that victoria oprator does not takes default port
-# victoria_logs_ports:
-#   vlinsert_http: 9481        # Ingestion clients → vlinsert (HTTPS, LoadBalancer) - operator default
-#   vlselect_http: 9471        # Query clients → vlselect (HTTPS, LoadBalancer) - operator default
-#   vlstorage_http: 9491       # Health checks and admin API (internal) - operator default
-#   vlstorage_insert: 9400     # vlinsert → vlstorage data sharding (HTTPS, internal)
-#   vlstorage_select: 9401     # vlselect → vlstorage query fan-out (HTTPS, internal)
-#   vlagent_syslog: 514        # Syslog receiver plaintext (TCP+UDP)
-#   vlagent_syslog_tls: 6514   # Syslog receiver TLS (TCP, RFC 5425)
-#   vlagent_http: 9429         # VLAgent health checks (distinct from vmagent 8429)
 
 # Telemetry shared path configuration
 telemetry_share_path: "{{ hostvars['localhost']['oim_shared_path'] }}/omnia/telemetry"
@@ -238,34 +290,37 @@ victoria_tls_cert_days: 3650
 victoria_cert_dir: "{{ telemetry_share_path }}/victoria-certs"
 syslog_tls_cert_dir: "{{ telemetry_share_path }}/syslog-tls-certs"
 
-# PowerScale syslog source IPs requirement message
-powerscale_syslog_source_ips_msg: >-
-  powerscale_configurations.syslog_source_ips is required when logs_enabled is true.
-  Provide the IP(s) from which PowerScale sends syslog.
-  This is often the data pool IP (e.g., 40gige-1 interface), NOT the CSI management IP.
-  Check OneFS Network Configuration → External Network → Pool IPs.
-
-# PowerScale syslog source IPs display message
-powerscale_syslog_source_ips_display_msg: >-
-  PowerScale syslog source IP(s): {{ powerscale_management_ips | join(', ') }}.
-  rsyslog $fromhost-ip filter will match these IPs and forward to VLAgent.
-
-# PowerScale log configuration status message
-powerscale_log_config_status_msg: >-
-  PowerScale syslog configuration script staged on NFS share.
-  During cloud-init, the script will configure rsyslog on all K8s nodes,
-  open firewall port 514/udp, and forward PowerScale syslog to VLAgent.
-  For complete PowerScale syslog configuration details, including manual
-  PowerScale setup steps, refer to Omnia documentation.
-
 # PowerScale VictoriaLogs validation fail message
 powerscale_victoria_logs_validation_fail_msg: >-
   PowerScale log collection requires 'victoria_logs' in
   telemetry_sources.powerscale.collection_targets.
 
-# Usage: vmagent-scrape-config.yaml
+# ============================================================================
+# CSI Volume Exporter Configuration
+# ============================================================================
+# Usage: csi-volume-exporter.yaml.j2, victoria-operator-vmscrape.yaml.j2
+# Deployed when telemetry_sources.powerscale.metrics_enabled: true
+# Exposes PowerScale PersistentVolume status as Prometheus metrics
+csi_volume_exporter:
+  app_name: "csi-volume-exporter"
+  service_name: "csi-volume-exporter"
+  service_account_name: "csi-volume-exporter"
+  cluster_role_name: "csi-volume-exporter"
+  cluster_role_binding_name: "csi-volume-exporter"
+  image: "{{ telemetry_images['library/python'] | default('docker.io/library/python:3.11-slim') }}"
+  metrics_port: 9090
+  scrape_interval: "30s"
+  scrape_interval_seconds: 30
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+# Usage: victoria-operator-vmagent.yaml.j2 (operator-native)
 vmagent:
-  configmap_name: "vmagent-scrape-config"
   global:
     scrape_interval: "10s"
   job_name: "idrac-telemetry"
@@ -279,20 +334,19 @@ vmagent:
   app_name: "vmagent"
   container_name: "vmagent"
   image: "{{ telemetry_images['victoriametrics/vmagent'] | default('victoriametrics/vmagent:v1.128.0') }}"
-  scrape_config_path: "/etc/vmagent/prometheus.yml"
   # Single-node URL
   remote_write_url: "https://victoria-loadbalancer.telemetry.svc.cluster.local:8443/api/v1/write"
   # Cluster URL (used when victoria_cluster.enabled: true)
   # Operator creates service as vminsert-victoria-cluster (not vminsert)
   # Protocol depends on tls_enabled: https when TLS is on, http otherwise
+  # Use service name only since vmagent and vminsert are in same namespace
   remote_write_url_cluster: >-
-    {{ 'https' if victoria_cluster.tls_enabled else 'http' }}://vminsert-victoria-cluster.{{
-    telemetry_namespace }}.svc.cluster.local:8480/insert/0/prometheus/api/v1/write
+    {{ 'https' if victoria_cluster.tls_enabled else 'http' }}://vminsert-victoria-cluster:8480/insert/0/prometheus/api/v1/write
 
 strmzi_kafka_tarball_url: "{{ offline_tarball_path }}/{{ strimzi_kafka_pkg }}/{{ strimzi_kafka_pkg }}.tar.gz"
 
 # Victoria Metrics operator tarball configuration
-# Version must match the Helm chart entry in service_k8s.json (victoria-metrics-operator-0.59.3)
+# Version must match the Helm chart entry in service_k8s (versioned) (victoria-metrics-operator-0.59.3)
 # Required for VLCluster and VLAgent CRD support (minimum v0.59.0)
 victoria_operator_pkg: "victoria-metrics-operator-0.59.3"
 victoria_operator_tarball_url: "{{ offline_tarball_path }}/{{ victoria_operator_pkg }}/{{ victoria_operator_pkg }}.tar.gz"
@@ -321,10 +375,8 @@ victoria_templates_operator_single:
     dest: 'victoria-operator-vmsingle.yaml'
   - src: 'telemetry/victoria/victoria-operator-vmagent.yaml.j2'
     dest: 'victoria-operator-vmagent.yaml'
-  - src: 'telemetry/victoria/victoria-operator-vmpodscrape.yaml.j2'
-    dest: 'victoria-operator-vmpodscrape.yaml'
-  - src: 'telemetry/victoria/victoria-operator-vmservicescrape-powerscale.yaml.j2'
-    dest: 'victoria-operator-vmservicescrape-powerscale.yaml'
+  - src: 'telemetry/victoria/victoria-operator-vmscrape.yaml.j2'
+    dest: 'victoria-operator-vmscrape.yaml'
 
 # Cluster operator template (used when victoria_cluster.enabled: true)
 victoria_templates_operator_cluster:
@@ -332,10 +384,8 @@ victoria_templates_operator_cluster:
     dest: 'victoria-operator-vmcluster.yaml'
   - src: 'telemetry/victoria/victoria-operator-vmagent.yaml.j2'
     dest: 'victoria-operator-vmagent.yaml'
-  - src: 'telemetry/victoria/victoria-operator-vmpodscrape.yaml.j2'
-    dest: 'victoria-operator-vmpodscrape.yaml'
-  - src: 'telemetry/victoria/victoria-operator-vmservicescrape-powerscale.yaml.j2'
-    dest: 'victoria-operator-vmservicescrape-powerscale.yaml'
+  - src: 'telemetry/victoria/victoria-operator-vmscrape.yaml.j2'
+    dest: 'victoria-operator-vmscrape.yaml'
 
 # Legacy manual deployment templates (removed - use operator-based templates above)
 # Raw victoria-cluster-vminsert/vmselect/vmstorage.yaml.j2 files have been removed
@@ -369,7 +419,6 @@ victoria_templates: >
 # ============================================================================
 # VictoriaLogs operator CR templates (used when 'victoria' in telemetry_collection_type)
 # These are applied alongside VictoriaMetrics templates in the same kustomize deployment.
-# NOTE: PowerScale syslog is deployed in UDP relay mode only.
 victorialogs_templates:
   - src: 'telemetry/victoria/victorialogs-operator-vlcluster.yaml.j2'
     dest: 'victorialogs-operator-vlcluster.yaml'
@@ -489,7 +538,7 @@ ps_telemetry_prepared_msg: >-
   Values file: {{ k8s_client_mount_path }}/karavi-observability/csm_metrics_values.yaml
   Deployment will occur during cloud-init (PXE boot) on the control plane node.
 ps_cert_manager_pkg_msg: >-
-  cert-manager package from service_k8s.json: {{ cert_manager_package | default('') }} ({{ cert_manager_chart_tgz | default('') }})
+  cert-manager package from service_k8s (versioned): {{ cert_manager_package | default('') }} ({{ cert_manager_chart_tgz | default('') }})
 ps_cert_manager_required_msg: "cert-manager dependency download: REQUIRED"
 ps_cert_manager_skipped_msg: "cert-manager dependency download: SKIPPED (disabled in values file)"
 ps_cert_manager_staged_msg: >-
@@ -506,37 +555,16 @@ ps_cert_manager_extract_fail_msg: >-
 ps_cert_manager_missing_msg: >-
   cert-manager Helm chart ({{ cert_manager_chart_tgz | default('') }}) was not found in
   {{ karavi_helm_chart_path }}/charts/. This chart is required for TLS certificate
-  management. Ensure the Jetstack cert-manager entry exists in service_k8s.json
+  management. Ensure the Jetstack cert-manager entry exists in service_k8s (versioned)
   and run local_repo.yml to download it to Pulp.
 ps_dependency_fail_msg: >-
   Failed to get karavi-observability dependencies from Pulp.
-  Ensure the following entries exist in service_k8s.json and run local_repo.yml:
+  Ensure the following entries exist in service_k8s (versioned) and run local_repo.yml:
     - karavi-observability (git)
     - helm-charts (git)
     - {{ cert_manager_package | default('cert-manager') }} (tarball from Jetstack Helm repo)
 
 # ============================================================================
-# PowerScale Log Pipeline Configuration (rsyslog relay + Shared VLAgent)
-# ============================================================================
-# Usage: deploy_powerscale_logs.yml
-# Gated by: telemetry_sources.powerscale.logs_enabled
-# Pipeline: PowerScale (UDP:514) → K8s rsyslog → VLAgent LB (TCP:514) → VictoriaLogs
-# PS syslog source IPs from user config (powerscale_configurations.syslog_source_ips)
-# NOTE: Syslog source IP != CSI endpoint (mgmt IP). Often the data pool IP (40gige-1).
-configure_ps_syslog_template: "{{ role_path }}/../configure_ochami/templates/powerscale/configure_powerscale_syslog.sh.j2"
-ps_log_enabled_msg: >-
-  PowerScale log collection enabled (telemetry_sources.powerscale.logs_enabled: true).
-  rsyslog will be configured on all K8s nodes to relay PowerScale audit syslog to VLAgent.
-  Syslog source IPs from powerscale_configurations.syslog_source_ips.
-ps_log_disabled_msg: >-
-  PowerScale log collection disabled (telemetry_sources.powerscale.logs_enabled: false).
-  rsyslog relay will not be configured. VLAgent will not include PowerScale labels.
-ps_log_deployed_msg: >-
-  PowerScale syslog configuration script staged on NFS share.
-  During cloud-init, the script will configure rsyslog on all K8s nodes,
-  open firewall port 514/udp, and forward PowerScale syslog to VLAgent.
-  For complete PowerScale syslog configuration details, including manual
-  PowerScale setup steps, refer to Omnia documentation.
 # Vector Kafka-to-Victoria Ingestion Pipeline Configuration
 # ============================================================================
 # Usage: deploy_vector_ldms.yml, deploy_vector_ome.yml
@@ -546,20 +574,21 @@ ps_log_deployed_msg: >-
 # Architecture:
 #   Kafka topics → Vector pods → vmagent-vector/vlagent-vector → Victoria sinks
 # Vector image (shared by all Vector pods: vector-ldms, vector-ome)
-# Registered in service_k8s.json
+# Registered in service_k8s (versioned)
 vector:
-  image: "{{ telemetry_images['timberio/vector'] | default('docker.io/timberio/vector:0.54.0-alpine') }}"
+  image: "{{ telemetry_images['timberio/vector'] | default('docker.io/timberio/vector:0.54.0-debian') }}"
 
   # Vector-LDMS configuration
   ldms:
     app_name: "vector-ldms"
     service_name: "vector-ldms"
+    container_name: "vector-ldms"
     kafka_topic: "ldms"
     consumer_group: "vector-ldms-group"
     kafka_user: "kafkapump"  # Shared with LDMS store_avro_kafka
     health_port: 8687
     metrics_port: 9599
-    replicas: 1
+    replicas: 2
     resources:
       requests:
         cpu: "100m"
@@ -572,6 +601,7 @@ vector:
   ome:
     app_name: "vector-ome"
     service_name: "vector-ome"
+    container_name: "vector-ome"
     # Dynamic pattern based on ome_identifier from telemetry_config.yml
     # Example: if ome_identifier="ome", pattern="^ome\\..*$" (matches ome.events, ome.alerts, etc.)
     # Example: if ome_identifier="dell_ome", pattern="^dell_ome\\..*$" (matches dell_ome.events, etc.)
@@ -580,7 +610,7 @@ vector:
     kafka_user: "vector-ome-user"  # Dedicated KafkaUser for OME
     health_port: 8688
     metrics_port: 9600
-    replicas: 1
+    replicas: 2
     resources:
       requests:
         cpu: "250m"
@@ -597,9 +627,9 @@ vector:
     port: 8429  # prometheus_remote_write receiver
     metrics_port: 8429  # vmagent self-metrics
     image: "{{ telemetry_images['victoriametrics/vmagent'] | default('docker.io/victoriametrics/vmagent:v1.128.0') }}"
-    replicas: 1
+    replicas: 2
     pvc_size: "5Gi"  # Disk WAL buffer
-    remote_write_url: "http://vminsert-victoria-cluster.{{ telemetry_namespace }}.svc.cluster.local:8480/insert/0/prometheus/api/v1/write"
+    remote_write_url: "https://vminsert-victoria-cluster.{{ telemetry_namespace }}.svc.cluster.local:8480/insert/0/prometheus/api/v1/write"
     tmp_data_path: "/vmagent-buffer"
     resources:
       requests:
@@ -617,9 +647,9 @@ vector:
     port: 9427  # JSON Lines receiver
     metrics_port: 9427  # vlagent self-metrics
     image: "{{ telemetry_images['victoriametrics/vlagent'] | default('docker.io/victoriametrics/vlagent:v1.49.0') }}"
-    replicas: 1
+    replicas: 2
     pvc_size: "5Gi"  # Disk buffer
-    remote_write_url: "http://vlinsert-victoria-logs-cluster.{{ telemetry_namespace }}.svc.cluster.local:9428/internal/insert"
+    remote_write_url: "https://vlinsert-victoria-logs-cluster.{{ telemetry_namespace }}.svc.cluster.local:9428/internal/insert"
     tmp_data_path: "/vlagent-buffer"
     resources:
       requests:
