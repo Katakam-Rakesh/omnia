@@ -21,7 +21,7 @@ metadata_perm: "0644"
 
 # Usage: read_software_config.yml
 # Versioned JSON file: service_k8s_v<version>.json (e.g., service_k8s_v1.35.1.json)
-k8s_packages_file: "{{ input_project_dir }}/config/x86_64/{{ software_config.cluster_os_type }}/{{ software_config.cluster_os_version }}/service_k8s_v{{ hostvars['localhost']['service_k8s_version'] }}.json"
+k8s_packages_file: "{{ input_project_dir }}/config/x86_64/{{ software_config.cluster_os_type }}/{{ software_config.cluster_os_version }}/service_k8s_v{{ hostvars['localhost']['service_k8s_version'] }}.json" # noqa: yaml[line-length]
 
 # Usage: secrets_creation.yml
 mysqldb_secrets_name: mysqldb-credentials
