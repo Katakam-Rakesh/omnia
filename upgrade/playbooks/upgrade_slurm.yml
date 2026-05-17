@@ -12,28 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ---
+- name: Create oim group and provision group
+  ansible.builtin.import_playbook: ../../utils/create_container_group.yml
+  vars:
+    oim_group: true
+  tags: always
 
 - name: Upgrade Slurm cluster (feature updates)
-  hosts: localhost
-  connection: local
+  hosts: oim
+  connection: ssh
   gather_facts: false
   vars:
     manifest_path: /opt/omnia/.data/upgrade_manifest.yml
     component_name: slurm
   tasks:
-    - name: Read upgrade_manifest.yml
-      ansible.builtin.slurp:
-        src: "{{ manifest_path }}"
-      register: raw_manifest
-
-    - name: Parse manifest
-      ansible.builtin.set_fact:
-        manifest: "{{ raw_manifest.content | b64decode | from_yaml }}"
+    - name: Include omnia_config
+      ansible.builtin.include_vars:
+        file: "{{ manifest_path }}"
+        name: manifest
 
     - name: Skip if slurm already upgraded
       ansible.builtin.meta: end_play
       when:
         - manifest.component_status[component_name] | default('pending') == 'completed'
+
+    - name: Set slurm upgrade directory
+      ansible.builtin.set_fact:
+        slurm_2_1_backup_dir: "{{ manifest.backup_dir }}"
 
     - name: Set slurm upgrade status to in-progress
       ansible.builtin.copy:
@@ -56,6 +61,11 @@
     - name: Slurm upgrade placeholder
       ansible.builtin.debug:
         msg: "Slurm feature upgrade tasks to be implemented (IB config, DNS, VAST, DCGM, HPC tools)"
+
+    - name: Include slurm upgrade role
+      ansible.builtin.include_role:
+        name: ../roles/upgrade_slurm
+      tags: slurm
 
     - name: Mark slurm upgrade as completed
       ansible.builtin.copy:
