@@ -62,7 +62,7 @@
       k8s: [oim]
       telemetry: [oim, k8s]
       cloud_init_bss: [oim]
-      slurm: [] # [oim]
+      slurm: [oim]
   tasks:
     # ─── Lock check: fail ONLY on rollback lock; ignore upgrade lock ───
     - name: Check for active rollback lock
