@@ -64,4 +64,3 @@
 - name: Cleanup common configuration
   ansible.builtin.import_tasks: cleanup_common.yml
   tags: common
-

@@ -213,6 +213,3 @@ oim_cleanup_note: |
 # Usage: cleanup_slurm.yml
 slurm_cleanup_confirm_token: 'YES'
 slurm_cleanup_pre_backup_default: 'y'
-
-
-
