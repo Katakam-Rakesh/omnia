@@ -116,7 +116,10 @@
 
 - name: Warn if nodes.yaml not found and skip backup
   ansible.builtin.debug:
-    msg: "WARNING: nodes.yaml not found at {{ hostvars['localhost']['oim_shared_path'] }}/omnia/openchami/workdir/nodes/nodes.yaml. Skipping backup and proceeding with cleanup only."
+    msg: >
+      WARNING: nodes.yaml not found at
+      {{ hostvars['localhost']['oim_shared_path'] }}/omnia/openchami/workdir/nodes/nodes.yaml.
+      Skipping backup and proceeding with cleanup only.
   when:
     - backup_choice_bool | default(false)
     - not nodes_yaml_stat.stat.exists
@@ -319,12 +322,4 @@
       ⚠️  No backup was created. This action cannot be undone.
       {% endif %}
   tags: slurm
-
-
-
-
-
-
-
-
 
