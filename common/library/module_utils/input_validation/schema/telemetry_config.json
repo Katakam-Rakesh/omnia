@@ -433,8 +433,7 @@
       "properties": {
         "ufm_endpoint": {
           "type": "string",
-          "minLength": 1,
-          "description": "UFM appliance IP address or hostname."
+          "description": "UFM appliance IP address or hostname. Required when UFM telemetry is enabled (metrics_enabled or logs_enabled is true)."
         },
         "ufm_metrics_port": {
           "type": "integer",
@@ -473,7 +472,7 @@
           "description": "Authentication mode for UFM Prometheus endpoint."
         }
       },
-      "required": ["ufm_endpoint"]
+      "required": []
     }
   },
   "required": ["telemetry_sources", "telemetry_bridges", "telemetry_sinks", "ldms_configurations", "powerscale_configurations", "ufm_configuration"]
