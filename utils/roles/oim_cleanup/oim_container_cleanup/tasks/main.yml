@@ -61,6 +61,10 @@
   ansible.builtin.import_tasks: cleanup_slurm.yml
   tags: slurm
 
+- name: Cleanup k8s configuration
+  ansible.builtin.import_tasks: cleanup_k8s.yml
+  tags: k8s
+
 - name: Cleanup common configuration
   ansible.builtin.import_tasks: cleanup_common.yml
   tags: common
