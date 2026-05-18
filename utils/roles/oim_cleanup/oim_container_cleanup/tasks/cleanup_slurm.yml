@@ -113,12 +113,16 @@
 - name: Display slurm cleanup completion message
   ansible.builtin.debug:
     msg: |
-      Slurm configuration cleanup completed successfully.
-      Deleted directory: {{ slurm_cleanup_path }}
+      Slurm configuration cleanup completed.
+      {% if slurm_cleanup_result.changed %}
+      Directory successfully deleted: {{ slurm_cleanup_path }}
+      {% else %}
+      Directory was already absent: {{ slurm_cleanup_path }}
+      {% endif %}
       {% if pre_cleanup_backup_choice in ['y', 'yes'] %}
       Backup was created and can be restored using: ansible-playbook utils/slurm_config_util.yml --tags config_rollback
       {% else %}
       No backup was created. This action cannot be undone.
       {% endif %}
-  when: slurm_cleanup_result.changed
   tags: slurm
+
