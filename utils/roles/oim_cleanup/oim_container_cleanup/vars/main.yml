@@ -196,10 +196,15 @@ oim_cleanup_note: |
   [Post-Cleanup Actions Required]
   1. Reboot the OIM node after running oim_cleanup.yml.
 
-  2. The playbook does NOT remove data stored under the NFS server_share_path (see /opt/omnia/input/project_default/storage_config.yml).
-     - Using the same server_share_path may cause deployment failures or inconsistent Kubernetes/Slurm behavior.
-     - For a fresh deployment, manually clean the contents of server_share_path or use a new NFS export/path.
+  2. The playbook now removes Slurm configuration data from the NFS share (slurm directory).
+     - Slurm configuration backup is offered before cleanup (recommended to accept).
+     - To skip slurm cleanup, run: ansible-playbook utils/oim_cleanup.yml --skip-tags slurm
+     - To restore slurm configs from backup, use: ansible-playbook utils/slurm_config_util.yml --tags config_rollback
 
   3. The omnia_core container is NOT removed by oim_cleanup.yml.
      - To delete it, log in to the OIM node and run:
        omnia.sh --uninstall
+
+# Usage: cleanup_slurm.yml
+slurm_cleanup_confirm_token: 'YES'
+slurm_cleanup_pre_backup_default: 'y'

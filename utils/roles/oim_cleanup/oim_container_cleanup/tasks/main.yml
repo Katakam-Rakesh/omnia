@@ -53,6 +53,10 @@
   when: hostvars['localhost']['enable_build_stream'] | bool
   tags: postgres
 
+- name: Cleanup slurm configuration
+  ansible.builtin.import_tasks: cleanup_slurm.yml
+  tags: slurm
+
 - name: Cleanup common configuration
   ansible.builtin.import_tasks: cleanup_common.yml
   tags: common

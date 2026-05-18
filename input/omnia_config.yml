@@ -96,8 +96,8 @@
 # Thes files will be written into the slurm_config directory with .conf suffix
 
 slurm_cluster:
-  - cluster_name: slurm_cluster
-    nfs_storage_name: nfs_slurm
+#  - cluster_name: slurm_cluster
+#    nfs_storage_name: nfs_slurm
     # skip_merge: true
     
     # Uncomment to enable homogeneous discovery mode
