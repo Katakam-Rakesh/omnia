@@ -18,6 +18,10 @@
     project_input_path: "{{ hostvars['localhost']['input_project_dir'] }}"
   tags: always
 
+- name: Include storage vars
+  ansible.builtin.include_vars: "{{ hostvars['localhost']['input_project_dir'] }}/storage_config.yml"
+  tags: always
+
 - name: Ensure firewalld is installed and running
   ansible.builtin.dnf:
     name: firewalld
@@ -60,3 +64,4 @@
 - name: Cleanup common configuration
   ansible.builtin.import_tasks: cleanup_common.yml
   tags: common
+

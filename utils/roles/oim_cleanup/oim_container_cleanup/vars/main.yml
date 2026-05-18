@@ -196,9 +196,14 @@ oim_cleanup_note: |
   [Post-Cleanup Actions Required]
   1. Reboot the OIM node after running oim_cleanup.yml.
 
-  2. The playbook now removes Slurm configuration data from the NFS share (slurm directory).
+  2. The playbook now removes Slurm-related directories from NFS share:
+     - slurm (Slurm configuration)
+     - ctld_track (Controller tracking)
+     - openldap (OpenLDAP)
+     - PRESERVED: slurm_backups (Backup directory)
      - Slurm configuration backup is offered before cleanup (recommended to accept).
      - To skip slurm cleanup, run: ansible-playbook utils/oim_cleanup.yml --skip-tags slurm
+     - Backup uses existing slurm_config_backup role (same as slurm_config_util.yml)
      - To restore slurm configs from backup, use: ansible-playbook utils/slurm_config_util.yml --tags config_rollback
 
   3. The omnia_core container is NOT removed by oim_cleanup.yml.
@@ -208,3 +213,6 @@ oim_cleanup_note: |
 # Usage: cleanup_slurm.yml
 slurm_cleanup_confirm_token: 'YES'
 slurm_cleanup_pre_backup_default: 'y'
+
+
+
