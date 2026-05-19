@@ -22,28 +22,40 @@
 - name: Set k8s NFS storage name
   ansible.builtin.set_fact:
     k8s_nfs_storage_name: "{{ service_k8s_cluster[0].nfs_storage_name }}"
+  tags: k8s
   when:
     - service_k8s_cluster is defined
     - service_k8s_cluster | length > 0
-  tags: k8s
 
 - name: Fail if k8s cluster not configured
   ansible.builtin.fail:
     msg: "K8s cluster not configured in omnia_config.yml. Please configure service_k8s_cluster first."
-  when: k8s_nfs_storage_name is not defined
   tags: k8s
+  when: k8s_nfs_storage_name is not defined
+
+- name: Check if k8s mount exists in storage_config
+  ansible.builtin.set_fact:
+    k8s_mount_found: >-
+      {{ mounts | selectattr('name', 'equalto', k8s_nfs_storage_name) | list | length > 0 }}
+  tags: k8s
+
+- name: Skip k8s cleanup if mount not configured
+  ansible.builtin.debug:
+    msg: >
+      K8s NFS mount '{{ k8s_nfs_storage_name }}' not found in storage_config.yml.
+      Skipping k8s cleanup. If you want to clean k8s directories, please configure
+      the mount for '{{ k8s_nfs_storage_name }}' in storage_config.yml.
+  tags: k8s
+  when: not k8s_mount_found
+
+- name: End k8s cleanup if mount not configured
+  ansible.builtin.meta: end_host
+  tags: k8s
+  when: not k8s_mount_found
 
 - name: Set k8s base path from detected mount
   ansible.builtin.set_fact:
     k8s_base_path: "{{ (mounts | selectattr('name', 'equalto', k8s_nfs_storage_name) | first).mount_point }}"
-  tags: k8s
-
-- name: Fail if k8s mount not found in storage_config
-  ansible.builtin.fail:
-    msg: >
-      K8s NFS mount '{{ k8s_nfs_storage_name }}' not found in storage_config.yml.
-      Please add the mount configuration for '{{ k8s_nfs_storage_name }}' in storage_config.yml.
-  when: k8s_base_path is not defined
   tags: k8s
 
 - name: Display detected k8s base path
@@ -70,8 +82,8 @@
   tags: k8s
 
 - name: Find node IP directories when enabled
-  when: k8s_cleanup_node_ips | default(false)
   tags: k8s
+  when: k8s_cleanup_node_ips | default(false)
   block:
     - name: Find all directories in k8s base path
       ansible.builtin.find:
@@ -90,8 +102,8 @@
 - name: Set empty IP dirs list when disabled
   ansible.builtin.set_fact:
     k8s_ip_dirs: []
-  when: not k8s_cleanup_node_ips | default(false)
   tags: k8s
+  when: not k8s_cleanup_node_ips | default(false)
 
 - name: Combine all cleanup paths
   ansible.builtin.set_fact:
@@ -110,13 +122,13 @@
 - name: Skip k8s cleanup if no directories exist
   ansible.builtin.debug:
     msg: "No K8s-related directories found, skipping k8s cleanup"
-  when: not k8s_cleanup_needed | default(false)
   tags: k8s
+  when: not k8s_cleanup_needed | default(false)
 
 - name: Skip k8s cleanup tasks if no directories exist
   ansible.builtin.meta: end_host
-  when: not k8s_cleanup_needed | default(false)
   tags: k8s
+  when: not k8s_cleanup_needed | default(false)
 
 - name: Display k8s cleanup information
   tags: k8s
@@ -150,8 +162,8 @@
 - name: Fail if cleanup not confirmed
   ansible.builtin.fail:
     msg: "K8s cleanup aborted"
-  when: k8s_cleanup_confirm.user_input | lower != k8s_cleanup_confirm_token | lower
   tags: k8s
+  when: k8s_cleanup_confirm.user_input | lower != k8s_cleanup_confirm_token | lower
 
 - name: Delete static k8s directories
   tags: k8s
@@ -159,8 +171,8 @@
     path: "{{ item.item }}"
     state: absent
   register: k8s_static_cleanup_result
-  loop: "{{ k8s_static_dirs_stat.results }}"
   when: item.stat.exists
+  loop: "{{ k8s_static_dirs_stat.results }}"
 
 - name: Delete node IP directories
   tags: k8s
@@ -168,8 +180,8 @@
     path: "{{ item }}"
     state: absent
   register: k8s_ip_cleanup_result
-  loop: "{{ k8s_ip_dirs }}"
   when: k8s_cleanup_node_ips | default(false)
+  loop: "{{ k8s_ip_dirs }}"
 
 - name: Display k8s cleanup completion message
   tags: k8s
