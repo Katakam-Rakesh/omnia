@@ -82,7 +82,7 @@
     # Step 3: Filter RPM repos by naming format
     #   Old format: <arch>_<rest> where rest does NOT start with <os>_<version>_
     #   New format: <arch>_<os>_<version>_<rest>
-    - name: Filter RPM repos by '{{ repo_format }}' format
+    - name: Filter RPM repos by format {{ repo_format }}
       ansible.builtin.set_fact:
         filtered_rpm_repos: >-
           {%- set result = [] -%}
@@ -132,7 +132,7 @@
 
   tasks:
     # Step 6: Call existing pulp_cleanup module with filtered RPM repo list
-    - name: Delete '{{ repo_format }}'-format RPM repos using pulp_cleanup (this may take some time)
+    - name: Delete RPM repos using pulp_cleanup for format {{ repo_format }}
       pulp_cleanup:
         cleanup_repos: "{{ filtered_rpm_repos }}"
         cleanup_containers: []
@@ -162,7 +162,12 @@
 
     - name: Build pulp.repo content
       ansible.builtin.set_fact:
-        pulp_repo_lines: "{{ pulp_repo_lines | default([]) + ['[' + item.name + ']', 'name=' + item.name + ' repo', 'baseurl=' + item.base_url, 'enabled=1', 'gpgcheck=0', ''] }}"
+        pulp_repo_lines: >-
+          {{ pulp_repo_lines | default([]) +
+             ['[' + item.name + ']',
+              'name=' + item.name + ' repo',
+              'baseurl=' + item.base_url,
+              'enabled=1', 'gpgcheck=0', ''] }}
       loop: "{{ current_distributions }}"
       loop_control:
         label: "{{ item.name }}"
