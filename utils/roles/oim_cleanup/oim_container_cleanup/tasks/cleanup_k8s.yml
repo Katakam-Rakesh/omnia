@@ -40,7 +40,9 @@
 
 - name: Fail if k8s mount not found in storage_config
   ansible.builtin.fail:
-    msg: "K8s NFS mount '{{ k8s_nfs_storage_name }}' not found in storage_config.yml. Please add the mount configuration for '{{ k8s_nfs_storage_name }}' in storage_config.yml."
+    msg: >
+      K8s NFS mount '{{ k8s_nfs_storage_name }}' not found in storage_config.yml.
+      Please add the mount configuration for '{{ k8s_nfs_storage_name }}' in storage_config.yml.
   when: k8s_base_path is not defined
   tags: k8s
 
@@ -68,6 +70,8 @@
   tags: k8s
 
 - name: Find node IP directories when enabled
+  when: k8s_cleanup_node_ips | default(false)
+  tags: k8s
   block:
     - name: Find all directories in k8s base path
       ansible.builtin.find:
@@ -82,8 +86,6 @@
              | selectattr('path', 'match', k8s_base_path + '/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
              | map(attribute='path')
              | list }}
-  when: k8s_cleanup_node_ips | default(false)
-  tags: k8s
 
 - name: Set empty IP dirs list when disabled
   ansible.builtin.set_fact:
@@ -117,6 +119,7 @@
   tags: k8s
 
 - name: Display k8s cleanup information
+  tags: k8s
   ansible.builtin.debug:
     msg: |
       WARNING: This will delete K8s-related directories from NFS share:
@@ -137,7 +140,6 @@
       Node IP directories: Skipped (k8s_cleanup_node_ips: false)
       {% endif %}
       This action is destructive and cannot be undone.
-  tags: k8s
 
 - name: Prompt for k8s cleanup confirmation
   ansible.builtin.pause:
@@ -152,24 +154,25 @@
   tags: k8s
 
 - name: Delete static k8s directories
+  tags: k8s
   ansible.builtin.file:
     path: "{{ item.item }}"
     state: absent
   register: k8s_static_cleanup_result
   loop: "{{ k8s_static_dirs_stat.results }}"
   when: item.stat.exists
-  tags: k8s
 
 - name: Delete node IP directories
+  tags: k8s
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
   register: k8s_ip_cleanup_result
   loop: "{{ k8s_ip_dirs }}"
   when: k8s_cleanup_node_ips | default(false)
-  tags: k8s
 
 - name: Display k8s cleanup completion message
+  tags: k8s
   ansible.builtin.debug:
     msg: |
       K8s-related cleanup completed.
@@ -202,4 +205,3 @@
       {% else %}
       Node IP directories: Skipped
       {% endif %}
-  tags: k8s
