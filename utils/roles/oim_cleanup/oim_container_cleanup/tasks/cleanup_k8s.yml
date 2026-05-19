@@ -14,9 +14,39 @@
 
 ---
 
-- name: Set k8s base path
+- name: Read omnia_config for k8s cluster configuration
+  ansible.builtin.include_vars:
+    file: "{{ hostvars['localhost']['input_project_dir'] }}/omnia_config.yml"
+  tags: k8s
+
+- name: Set k8s NFS storage name
   ansible.builtin.set_fact:
-    k8s_base_path: "{{ (mounts | selectattr('name', 'equalto', 'nfs_slurm') | first).mount_point }}"
+    k8s_nfs_storage_name: "{{ service_k8s_cluster[0].nfs_storage_name }}"
+  when:
+    - service_k8s_cluster is defined
+    - service_k8s_cluster | length > 0
+  tags: k8s
+
+- name: Fail if k8s cluster not configured
+  ansible.builtin.fail:
+    msg: "K8s cluster not configured in omnia_config.yml. Please configure service_k8s_cluster first."
+  when: k8s_nfs_storage_name is not defined
+  tags: k8s
+
+- name: Set k8s base path from detected mount
+  ansible.builtin.set_fact:
+    k8s_base_path: "{{ (mounts | selectattr('name', 'equalto', k8s_nfs_storage_name) | first).mount_point }}"
+  tags: k8s
+
+- name: Fail if k8s mount not found in storage_config
+  ansible.builtin.fail:
+    msg: "K8s NFS mount '{{ k8s_nfs_storage_name }}' not found in storage_config.yml. Please add the mount configuration for '{{ k8s_nfs_storage_name }}' in storage_config.yml."
+  when: k8s_base_path is not defined
+  tags: k8s
+
+- name: Display detected k8s base path
+  ansible.builtin.debug:
+    msg: "K8s cleanup using mount: {{ k8s_base_path }} (storage name: {{ k8s_nfs_storage_name }})"
   tags: k8s
 
 - name: Build k8s cleanup paths from variable list
