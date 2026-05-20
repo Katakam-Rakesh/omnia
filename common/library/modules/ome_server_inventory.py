@@ -106,9 +106,7 @@ devices:
           first_nic_mac: "AA:BB:CC:DD:EE:10"
           group_name: "Rack-A"
           model: "PowerEdge R640"
-          ib_nic_name: "NIC.Mezzanine.1-1-1"
-          gpu_manufacturer: "NVIDIA"
-          gpu_name: "NVIDIA A100"
+          ib_nic_name: "InfiniBand.Slot.7-1"
 '''
 
 
@@ -394,9 +392,7 @@ def extract_server_info(client, device, device_group_map=None):
         "first_nic_name": "",
         "first_nic_mac": "",
         "group_name": "",
-        "ib_nic_name": "",
-        "gpu_manufacturer": "",
-        "gpu_name": ""
+        "ib_nic_name": ""
     }
 
     # Get management IP from device info
@@ -477,6 +473,7 @@ def extract_server_info(client, device, device_group_map=None):
                 break
 
     # Get InfiniBand NIC: FQDD contains "InfiniBand" and LinkStatus is Up
+    # Use port-level PortId (e.g. "InfiniBand.Slot.7-1") for precise identification
     for nic in nic_info_list:
         nic_id = nic.get("NicId", "")
         if "infiniband" not in nic_id.lower():
@@ -484,32 +481,11 @@ def extract_server_info(client, device, device_group_map=None):
         for port in nic.get("Ports", []):
             link_status = (port.get("LinkStatus") or "").strip()
             if link_status.upper() == "UP":
-                info["ib_nic_name"] = nic_id
+                port_id = port.get("PortId", "")
+                info["ib_nic_name"] = port_id if port_id else nic_id
                 break
         if info["ib_nic_name"]:
             break
-
-    # Get GPU information from devicePciDevice inventory
-    # Match by Description keywords or by FQDD containing "Video.Integrated"
-    pci_inventory = client.get_device_inventory(device_id, "devicePciDevice")
-    for pci in pci_inventory.get("InventoryInfo", []):
-        desc = (pci.get("Description", "") or "").lower()
-        fqdd = (pci.get("SlotNumber", "") or "").lower()
-        if ("gpu" in desc or "vga" in desc or "3d controller" in desc
-                or "display" in desc or "video.integrated" in fqdd):
-            info["gpu_manufacturer"] = pci.get("Manufacturer", "") or pci.get("VendorName", "")
-            info["gpu_name"] = pci.get("Description", "")
-            break
-
-    # Fallback: check serverDeviceCards for Video.Integrated FQDD
-    if not info["gpu_name"]:
-        card_inventory = client.get_device_inventory(device_id, "serverDeviceCards")
-        for card in card_inventory.get("InventoryInfo", []):
-            fqdd = (card.get("SlotNumber", "") or "").lower()
-            if "video.integrated" in fqdd:
-                info["gpu_manufacturer"] = card.get("Manufacturer", "") or ""
-                info["gpu_name"] = card.get("Description", "") or ""
-                break
 
     # Get group name from pre-built device→group map
     if device_group_map:

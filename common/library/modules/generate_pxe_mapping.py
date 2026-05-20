@@ -226,9 +226,7 @@ def main():
         "BMC_MAC",
         "BMC_IP",
         "IB_NIC_NAME",
-        "IB_IP",
-        "GPU_MANUFACTURER",
-        "GPU_NAME"
+        "IB_IP"
     ]
 
     if module.check_mode:
@@ -284,9 +282,7 @@ def main():
                 "BMC_MAC": server.get('idrac_mac', ''),
                 "BMC_IP": bmc_ip,
                 "IB_NIC_NAME": ib_nic_name,
-                "IB_IP": ib_ip,
-                "GPU_MANUFACTURER": server.get('gpu_manufacturer', ''),
-                "GPU_NAME": server.get('gpu_name', '')
+                "IB_IP": ib_ip
             }
             rows.append(row)
 
