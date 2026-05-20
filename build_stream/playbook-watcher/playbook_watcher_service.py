@@ -910,6 +910,13 @@ def execute_playbook(request_data: Dict[str, Any]) -> Dict[str, Any]:
                     "Node results file found for restart stage",
                     job_id
                 )
+            else:
+                log_secure_info(
+                    "warning",
+                    f"node_results.json NOT found at {node_results_path} for restart stage. "
+                    f"Playbook may have failed before BSM post-processing (Play 8).",
+                    job_id
+                )
 
         return result_data
 
