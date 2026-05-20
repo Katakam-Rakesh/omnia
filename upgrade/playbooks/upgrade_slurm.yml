@@ -12,15 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ---
-- name: Create oim group and provision group
-  ansible.builtin.import_playbook: ../../utils/create_container_group.yml
-  vars:
-    oim_group: true
-  tags: always
-
-- name: Upgrade Slurm cluster skip
-  hosts: oim
-  connection: ssh
+- name: Slurm pre-flight — manifest gating
+  hosts: localhost
+  connection: local
   gather_facts: false
   vars:
     manifest_path: /opt/omnia/.data/upgrade_manifest.yml
@@ -110,7 +104,7 @@
   tasks:
     - name: Skip if slurm upgrade not needed
       ansible.builtin.meta: end_play
-      when: 
+      when:
         - hostvars['localhost']['slurm_skip'] | default(false) | bool
 
     - name: Read software_config.json
@@ -118,10 +112,16 @@
         file: "{{ hostvars['localhost']['input_project_dir'] }}/software_config.json"
         name: software_config
 
-    - name: End play if slurm not present in software_config.json
-      ansible.builtin.meta: end_play
+    - name: Notify slurm not configured and end play
       when: >-
         (software_config.softwares | selectattr('name', 'equalto', 'slurm_custom') | list | length) == 0
+      block:
+        - name: Display message
+          ansible.builtin.debug:
+            msg: "Slurm is not configured in software_config.json. Skipping Slurm upgrade."
+
+        - name: End play
+          ansible.builtin.meta: end_play
 
     - name: SLURM UPGRADE WARNING
       ansible.builtin.debug:
@@ -208,11 +208,11 @@
       tags: slurm
 
 # ============================================================================
-# Play 3: Slurm feature upgrade tasks + mark complete
+# Play 3: Slurm feature mark complete
 # ============================================================================
 - name: Upgrade Slurm cluster (feature updates)
-  hosts: oim
-  connection: ssh
+  hosts: localhost
+  connection: local
   gather_facts: false
   vars:
     manifest_path: /opt/omnia/.data/upgrade_manifest.yml

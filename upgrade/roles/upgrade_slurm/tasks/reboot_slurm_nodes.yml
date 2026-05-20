@@ -48,8 +48,10 @@
   async: 10
   poll: 0
   failed_when: false
+  changed_when: true
   ignore_unreachable: true
   ignore_errors: true
+  register: async_reboot_results
 
 - name: Wait for all slurm nodes to come back online
   ansible.builtin.wait_for:
