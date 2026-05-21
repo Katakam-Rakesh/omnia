@@ -24,7 +24,7 @@
     manifest_path: /opt/omnia/.data/upgrade_manifest.yml
     component_name: slurm
   tasks:
-    - name: Include omnia_config
+    - name: Read upgrade_manifest.yml
       ansible.builtin.include_vars:
         file: "{{ manifest_path }}"
         name: manifest
