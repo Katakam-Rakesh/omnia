@@ -49,15 +49,28 @@ fi
 echo "Target IB NIC name: $IB_NIC_NAME"
 echo "Target IB IP: $IB_IP"
 
-# Extract port number from IB_NIC_NAME
-# Handles formats: "InfiniBand.PCIe.Slot.1-1" → "1", "InfiniBand.Single-1" → "1"
-PORT_NUMBER=$(echo "$IB_NIC_NAME" | grep -oE "[0-9]+$")
-if [ -z "$PORT_NUMBER" ]; then
+# Extract slot and port numbers from IB_NIC_NAME
+# Support formats: "InfiniBand.Slot.X-Y", "NIC.InfiniBand.X-Y", "InfiniBand.Single-Y"
+SLOT_NUMBER=""
+PORT_NUMBER=""
+
+if [[ "$IB_NIC_NAME" =~ ^(InfiniBand\.PCIe\.Slot\.|InfiniBand\.Slot\.|NIC\.InfiniBand\.)([0-9]+)-([0-9]+)$ ]]; then
+    SLOT_NUMBER="${BASH_REMATCH[2]}"
+    PORT_NUMBER="${BASH_REMATCH[3]}"
+    echo "Extracted slot number: $SLOT_NUMBER"
+    echo "Extracted port number: $PORT_NUMBER"
+elif [[ "$IB_NIC_NAME" =~ ^InfiniBand\.Single-([0-9]+)$ ]]; then
+    PORT_NUMBER="${BASH_REMATCH[1]}"
+    echo "Single-port device detected, port number: $PORT_NUMBER"
+else
     echo "ERROR: Invalid IB_NIC_NAME format: $IB_NIC_NAME"
-    echo "ERROR: Expected format: 'InfiniBand.PCIe.Slot.X-Y' or 'InfiniBand.Single-Y'"
+    echo "ERROR: Expected formats:"
+    echo "  - 'InfiniBand.PCIe.Slot.X-Y' (slot X, port Y)"
+    echo "  - 'InfiniBand.Slot.X-Y' (slot X, port Y)"
+    echo "  - 'NIC.InfiniBand.X-Y' (slot X, port Y)"
+    echo "  - 'InfiniBand.Single-Y' (single device, port Y)"
     exit 1
 fi
-echo "Extracted port number: $PORT_NUMBER"
 
 # Check if IB hardware is present
 if ! ls /sys/class/infiniband/ >/dev/null 2>&1; then
@@ -65,15 +78,71 @@ if ! ls /sys/class/infiniband/ >/dev/null 2>&1; then
     exit 1
 fi
 
-# Find mlx5 device - for now, use the first mlx5 device found
-MLX5_DEVICE=$(ls /sys/class/infiniband/ | grep mlx5 | head -1)
-if [ -z "$MLX5_DEVICE" ]; then
-    echo "ERROR: No mlx5 device found in /sys/class/infiniband/"
-    exit 1
+# Count mlx5 devices to determine mapping strategy
+MLX5_DEVICE_COUNT=$(ls /sys/class/infiniband/ | grep mlx5 | wc -l)
+echo "Found $MLX5_DEVICE_COUNT mlx5 device(s)"
+
+# Simple slot-to-device mapping function
+find_device_by_slot() {
+    local target_slot="$1"
+    
+    for mlx_device in /sys/class/infiniband/mlx5_*; do
+        [ -e "$mlx_device" ] || continue
+        device_name=$(basename "$mlx_device")
+        
+        # Get PCI address and extract slot number
+        pci_address=$(basename "$(readlink -f "/sys/class/infiniband/$device_name/device" 2>/dev/null)")
+        if [ -n "$pci_address" ]; then
+            # Extract slot from PCI address: 0000:17:00.0 → "17"
+            pci_slot=$(echo "$pci_address" | cut -d: -f2 | sed 's/^0*//')
+            target_clean=$(echo "$target_slot" | sed 's/^0*//')
+            
+            echo "DEBUG: $device_name → PCI $pci_address → slot $pci_slot"
+            
+            if [[ "$pci_slot" == "$target_clean" ]]; then
+                echo "$device_name"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+# Select mlx5 device based on device count and slot information
+if [ "$MLX5_DEVICE_COUNT" -gt 1 ] && [ -n "$SLOT_NUMBER" ]; then
+    echo "INFO: Multiple mlx5 devices detected, using slot-based mapping"
+    echo "INFO: Looking for device in slot $SLOT_NUMBER"
+    
+    MLX5_DEVICE=$(find_device_by_slot "$SLOT_NUMBER")
+    
+    if [ -z "$MLX5_DEVICE" ]; then
+        echo "ERROR: No mlx5 device found for slot $SLOT_NUMBER"
+        echo "ERROR: Available mlx5 devices:"
+        for mlx_device in /sys/class/infiniband/mlx5_*; do
+            [ -e "$mlx_device" ] || continue
+            device_name=$(basename "$mlx_device")
+            pci_address=$(basename "$(readlink -f "/sys/class/infiniband/$device_name/device" 2>/dev/null)")
+            if [ -n "$pci_address" ]; then
+                pci_slot=$(echo "$pci_address" | cut -d: -f2 | sed 's/^0*//')
+                echo "  $device_name: PCI $pci_address (slot $pci_slot)"
+            else
+                echo "  $device_name: PCI information not available"
+            fi
+        done
+        exit 1
+    fi
+    
+    echo "SUCCESS: Found mlx5 device $MLX5_DEVICE for slot $SLOT_NUMBER"
+else
+    echo "INFO: Using device-based mapping (single device or no slot specified)"
+    MLX5_DEVICE=$(ls /sys/class/infiniband/ | grep mlx5 | head -1)
+    if [ -z "$MLX5_DEVICE" ]; then
+        echo "ERROR: No mlx5 device found in /sys/class/infiniband/"
+        exit 1
+    fi
 fi
 
-echo "Found mlx5 device: $MLX5_DEVICE"
-echo "Note: Using first mlx5 device - for multi-device environments, consider adding slot-to-device mapping"
+echo "Selected mlx5 device: $MLX5_DEVICE"
 
 # Check if the specified port exists
 PORT_PATH="/sys/class/infiniband/${MLX5_DEVICE}/ports/${PORT_NUMBER}"
