@@ -35,10 +35,22 @@
   failed_when: false
   delegate_to: "{{ slurm_ctld_host }}"
 
-- name: Abort reboot if jobs are running
-  ansible.builtin.fail:
-    msg: "Slurm cluster has {{ running_jobs.stdout | trim }} running job(s). Aborting node reboot."
+- name: Upgrade complete reboot pending
   when: running_jobs.stdout | trim | int > 0
+  block:
+    - name: Show upgrade completion message
+      ansible.builtin.debug:
+        msg: "{{ slurm_reboot_message }}"
+      vars:
+        slurm_reboot_message:
+          - "Slurm upgrade completed successfully."
+          - "REBOOT MUST BE PERFORMED MANUALLY TO REFLECT UPGRADED VERSION."
+          - "Note: {{ running_jobs.stdout | trim }} running job(s) detected."
+          - "Please drain and stop jobs before proceeding with node reboot."
+
+    - name: Abort reboot if jobs are running
+      ansible.builtin.fail:
+        msg: "Slurm cluster has ACTIVE jobs running. Please drain and stop jobs before proceeding with node reboot."
 
 - name: Issue reboot on all slurm nodes asynchronously
   ansible.builtin.command:

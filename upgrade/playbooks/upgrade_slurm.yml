@@ -123,6 +123,36 @@
         - name: End play
           ansible.builtin.meta: end_play
 
+    - name: Include omnia_config
+      ansible.builtin.include_vars:
+        file: "{{ hostvars['localhost']['input_project_dir'] }}/provision_config.yml"
+        name: provision_config
+
+    - name: Read pxe_mapping_file
+      community.general.read_csv:
+        path: "{{ provision_config.pxe_mapping_file_path }}"
+      register: pxe_mapping
+      delegate_to: localhost
+
+    - name: Filter rows first
+      ansible.builtin.set_fact:
+        slurm_filtered_rows: >-
+          {{ pxe_mapping.list
+            | selectattr('FUNCTIONAL_GROUP_NAME', 'match', '^(slurm|login)')
+                | list }}
+
+    - name: Build dict
+      ansible.builtin.set_fact:
+        slurm_host_group_map: >-
+          {{ dict(
+              slurm_filtered_rows | map(attribute='HOSTNAME')
+              | zip(slurm_filtered_rows | map(attribute='FUNCTIONAL_GROUP_NAME'))
+          ) }}
+
+    - name: End play if not slurm nodes in pxe_mapping
+      ansible.builtin.meta: end_play
+      when: slurm_host_group_map | default({}) | length == 0
+
     - name: SLURM UPGRADE WARNING
       ansible.builtin.debug:
         msg: "{{ slurm_upgrade_banner }}"
@@ -152,32 +182,6 @@
       ansible.builtin.pause:
         seconds: 10
         prompt: "SLURM UPGRADE - Proceeding in 10 seconds..."
-
-    - name: Include omnia_config
-      ansible.builtin.include_vars:
-        file: "{{ hostvars['localhost']['input_project_dir'] }}/provision_config.yml"
-        name: provision_config
-
-    - name: Read pxe_mapping_file
-      community.general.read_csv:
-        path: "{{ provision_config.pxe_mapping_file_path }}"
-      register: pxe_mapping
-      delegate_to: localhost
-
-    - name: Filter rows first
-      ansible.builtin.set_fact:
-        slurm_filtered_rows: >-
-          {{ pxe_mapping.list
-            | selectattr('FUNCTIONAL_GROUP_NAME', 'match', '^(slurm|login)')
-                | list }}
-
-    - name: Build dict
-      ansible.builtin.set_fact:
-        slurm_host_group_map: >-
-          {{ dict(
-              slurm_filtered_rows | map(attribute='HOSTNAME')
-              | zip(slurm_filtered_rows | map(attribute='FUNCTIONAL_GROUP_NAME'))
-          ) }}
 
     - name: Refresh OpenCHAMI access token
       ansible.builtin.include_tasks: "{{ playbook_dir }}/../../common/tasks/common/openchami_auth.yml"
