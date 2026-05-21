@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ---
+
+# ============================================================================
+# Play 1: Pre-flight — manifest gating, BuildStream terminal gate
+# ============================================================================
 - name: Slurm pre-flight — manifest gating
   hosts: localhost
   connection: local
