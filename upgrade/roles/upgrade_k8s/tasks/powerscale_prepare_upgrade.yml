@@ -1,0 +1,241 @@
+# Copyright 2026 Dell Inc. or its subsidiaries. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# PowerScale CSI Driver Upgrade - Phase 4: Prepare Upgrade Environment
+# ═══════════════════════════════════════════════════════════════════════════
+# This task file prepares the upgrade environment for PowerScale CSI driver:
+# 1. Clone CSI PowerScale repository to NFS mount (persistent storage)
+# 2. Copy repository to cluster local directory (for upgrade execution)
+# 3. Copy Phase 1 configuration files to versioned directory
+# 4. Create upgrade plan document
+#
+# Prerequisites:
+# - Phase 1 (Input Transformation) completed
+# - Phase 2 (Pre-Upgrade Validation) completed
+# - Phase 3 (Backup Current State) completed
+# - k8s_client_mount_path defined (NFS mount point)
+# - powerscale_target_version defined (from software_config.json)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────────────
+# Set PowerScale upgrade paths dynamically
+# ───────────────────────────────────────────────────────────────────────────
+- name: Set PowerScale upgrade paths
+  ansible.builtin.set_fact:
+    powerscale_nfs_base: "{{ k8s_client_mount_path }}/csi-driver-powerscale"
+    powerscale_nfs_version_dir: >-
+      {{ k8s_client_mount_path }}/csi-driver-powerscale/{{ powerscale_target_version }}
+    powerscale_nfs_repo_dir: >-
+      {{ k8s_client_mount_path }}/csi-driver-powerscale/{{ powerscale_target_version }}/{{ powerscale_repo_name }}
+    powerscale_cluster_version_dir: "{{ powerscale_cluster_base }}/{{ powerscale_target_version }}"
+    powerscale_cluster_repo_dir: >-
+      {{ powerscale_cluster_base }}/{{ powerscale_target_version }}/{{ powerscale_repo_name }}
+    powerscale_csi_install_script: >-
+      {{ powerscale_cluster_base }}/{{ powerscale_target_version }}/{{ powerscale_repo_name }}/dell-csi-helm-installer/csi-install.sh
+    powerscale_cluster_values_file: "{{ powerscale_cluster_base }}/{{ powerscale_target_version }}/values.yaml"
+    powerscale_cluster_secret_file: "{{ powerscale_cluster_base }}/{{ powerscale_target_version }}/secret.yaml"
+    powerscale_upgrade_plan_file: "{{ powerscale_cluster_base }}/{{ powerscale_target_version }}/upgrade-plan.yaml"
+
+- name: Display PowerScale upgrade paths
+  ansible.builtin.debug:
+    msg:
+      - "PowerScale upgrade environment preparation:"
+      - "  NFS base: {{ powerscale_nfs_base }}"
+      - "  NFS version directory: {{ powerscale_nfs_version_dir }}"
+      - "  NFS repository: {{ powerscale_nfs_repo_dir }}"
+      - "  Cluster version directory: {{ powerscale_cluster_version_dir }}"
+      - "  Cluster repository: {{ powerscale_cluster_repo_dir }}"
+      - "  CSI install script: {{ powerscale_csi_install_script }}"
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 1: Create versioned directory on NFS mount
+# ───────────────────────────────────────────────────────────────────────────
+- name: Create PowerScale versioned directory on NFS mount
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "{{ powerscale_nfs_version_dir }}"
+    state: directory
+    mode: "{{ dir_perm_755 }}"
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 2: Clone CSI PowerScale repository to NFS mount
+# ───────────────────────────────────────────────────────────────────────────
+- name: Check if PowerScale repository already exists on NFS
+  delegate_to: localhost
+  ansible.builtin.stat:
+    path: "{{ powerscale_nfs_repo_dir }}/.git"
+  register: powerscale_nfs_repo_check
+
+- name: Clone PowerScale CSI driver repository to NFS
+  delegate_to: localhost
+  ansible.builtin.git:
+    repo: "{{ powerscale_repo_url }}"
+    dest: "{{ powerscale_nfs_repo_dir }}"
+    version: "{{ powerscale_target_version }}"
+    depth: 1
+  register: powerscale_git_clone
+  when: not powerscale_nfs_repo_check.stat.exists
+  failed_when: false
+
+- name: Fail if git clone failed
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_git_clone_failed }}"
+  when:
+    - not powerscale_nfs_repo_check.stat.exists
+    - powerscale_git_clone.failed | default(false)
+
+- name: Update existing repository and checkout target version
+  delegate_to: localhost
+  block:
+    - name: Fetch latest changes from repository
+      ansible.builtin.command:
+        cmd: git fetch --depth 1 origin tag {{ powerscale_target_version }}
+        chdir: "{{ powerscale_nfs_repo_dir }}"
+      register: powerscale_git_fetch
+      changed_when: powerscale_git_fetch.rc == 0
+      failed_when: false
+
+    - name: Checkout target version
+      ansible.builtin.command:
+        cmd: git checkout {{ powerscale_target_version }}
+        chdir: "{{ powerscale_nfs_repo_dir }}"
+      register: powerscale_git_checkout
+      changed_when: powerscale_git_checkout.rc == 0
+      failed_when: false
+
+    - name: Fail if git checkout failed
+      ansible.builtin.fail:
+        msg: "{{ msg_powerscale_git_checkout_failed }}"
+      when: powerscale_git_checkout.failed | default(false)
+  when: powerscale_nfs_repo_check.stat.exists
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 3: Verify csi-install.sh script exists on NFS
+# ───────────────────────────────────────────────────────────────────────────
+- name: Verify csi-install.sh script exists on NFS
+  delegate_to: localhost
+  ansible.builtin.stat:
+    path: "{{ powerscale_nfs_repo_dir }}/dell-csi-helm-installer/csi-install.sh"
+  register: powerscale_nfs_script_check
+
+- name: Fail if csi-install.sh not found on NFS
+  ansible.builtin.fail:
+    msg: "csi-install.sh script not found at {{ powerscale_nfs_repo_dir }}/dell-csi-helm-installer/csi-install.sh"
+  when: not powerscale_nfs_script_check.stat.exists
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 4: Create cluster local versioned directory
+# ───────────────────────────────────────────────────────────────────────────
+- name: Create PowerScale versioned directory on cluster local
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.file:
+    path: "{{ powerscale_cluster_version_dir }}"
+    state: directory
+    mode: "{{ dir_perm_755 }}"
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 5: Copy repository from NFS to cluster local (kube_vip)
+# ───────────────────────────────────────────────────────────────────────────
+- name: Copy PowerScale repository from NFS to cluster local
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.copy:
+    src: "{{ powerscale_nfs_repo_dir }}/"
+    dest: "{{ powerscale_cluster_repo_dir }}/"
+    mode: preserve
+    remote_src: true
+  register: powerscale_repo_copy
+  failed_when: false
+
+- name: Fail if repository copy failed
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_copy_failed }}"
+  when: powerscale_repo_copy.failed | default(false)
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 6: Verify csi-install.sh script exists on cluster local (kube_vip)
+# ───────────────────────────────────────────────────────────────────────────
+- name: Verify csi-install.sh script exists on cluster local
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.stat:
+    path: "{{ powerscale_csi_install_script }}"
+  register: powerscale_cluster_script_check
+
+- name: Fail if csi-install.sh not found on cluster local
+  ansible.builtin.fail:
+    msg: "csi-install.sh script not found at {{ powerscale_csi_install_script }}"
+  when: not powerscale_cluster_script_check.stat.exists
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 7: Validate Phase 1 configuration files exist (on localhost)
+# ───────────────────────────────────────────────────────────────────────────
+- name: Check if values.yaml exists from Phase 1
+  delegate_to: localhost
+  ansible.builtin.stat:
+    path: "{{ powerscale_source_values_file }}"
+  register: powerscale_phase1_values_check
+
+- name: Fail if values.yaml not found from Phase 1
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_values_missing }}"
+  when: not powerscale_phase1_values_check.stat.exists
+
+- name: Check if secret.yaml exists from Phase 1
+  delegate_to: localhost
+  ansible.builtin.stat:
+    path: "{{ powerscale_source_secret_file }}"
+  register: powerscale_phase1_secret_check
+
+- name: Fail if secret.yaml not found from Phase 1
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_secret_missing }}"
+  when: not powerscale_phase1_secret_check.stat.exists
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 8: Copy configuration files to versioned directory (on kube_vip)
+# ───────────────────────────────────────────────────────────────────────────
+- name: Copy values.yaml from Phase 1 to versioned directory on kube_vip
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.copy:
+    src: "{{ powerscale_source_values_file }}"
+    dest: "{{ powerscale_cluster_values_file }}"
+    mode: "{{ file_perm_644 }}"
+  register: powerscale_values_copy
+  failed_when: false
+
+- name: Fail if values.yaml copy failed
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_config_copy_failed }}"
+  when: powerscale_values_copy.failed | default(false)
+
+- name: Copy secret.yaml from Phase 1 to versioned directory on kube_vip
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.copy:
+    src: "{{ powerscale_source_secret_file }}"
+    dest: "{{ powerscale_cluster_secret_file }}"
+    mode: "{{ file_perm_644 }}"
+  register: powerscale_secret_copy
+  failed_when: false
+
+- name: Fail if secret.yaml copy failed
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_config_copy_failed }}"
+  when: powerscale_secret_copy.failed | default(false)
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 9: Display preparation summary
+# ───────────────────────────────────────────────────────────────────────────
+- name: Display PowerScale upgrade preparation summary
+  ansible.builtin.debug:
+    msg: "{{ msg_powerscale_prepare_summary }}"

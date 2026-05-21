@@ -1,0 +1,150 @@
+# Copyright 2026 Dell Inc. or its subsidiaries. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# ═══════════════════════════════════════════════════════════════════════════
+# PowerScale CSI Driver Upgrade - Phase 5: Execute Upgrade
+# ═══════════════════════════════════════════════════════════════════════════
+# This task file executes the PowerScale CSI driver upgrade:
+# 1. Execute csi-install.sh with --skip-verify --upgrade flags
+# 2. Monitor upgrade progress
+# 3. Wait for controller pods to be ready
+# 4. Wait for node daemonset to be ready
+# 5. Verify upgrade success
+#
+# Prerequisites:
+# - Phase 4 (Prepare Upgrade Environment) completed
+# - Repository and configuration files staged on kube_vip
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 1: Execute upgrade using csi-install.sh
+# ───────────────────────────────────────────────────────────────────────────
+- name: Execute PowerScale CSI driver upgrade
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      cd {{ powerscale_cluster_repo_dir }}/dell-csi-helm-installer
+      ./csi-install.sh \
+        --namespace {{ powerscale_namespace }} \
+        --values {{ powerscale_cluster_values_file }} \
+        --skip-verify \
+        --upgrade 2>&1 | tee /tmp/powerscale_upgrade_{{ powerscale_target_version }}.log
+    executable: /bin/bash
+  register: powerscale_upgrade_result
+  changed_when: true
+  async: 600
+  poll: 0
+
+- name: Wait for PowerScale upgrade to complete
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.async_status:
+    jid: "{{ powerscale_upgrade_result.ansible_job_id }}"
+  register: powerscale_upgrade_job
+  until: powerscale_upgrade_job.finished
+  retries: 60
+  delay: 10
+  failed_when: false
+
+- name: Check if upgrade command succeeded
+  ansible.builtin.fail:
+    msg: "PowerScale upgrade failed. Check logs at /tmp/powerscale_upgrade_{{ powerscale_target_version }}.log on {{ kube_vip }}"
+  when: powerscale_upgrade_job.rc | default(1) != 0
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 2: Wait for controller pods to be ready
+# ───────────────────────────────────────────────────────────────────────────
+- name: Wait for PowerScale controller pods to be ready
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      kubectl get pods -n {{ powerscale_namespace }} -l app=isilon-controller -o json | \
+        jq -r '.items[] | select(.status.phase=="Running" and 
+        (.status.conditions[] | select(.type=="Ready" and .status=="True"))) | .metadata.name' | wc -l
+    executable: /bin/bash
+  register: powerscale_controller_ready_count
+  until: powerscale_controller_ready_count.stdout | int >= 1
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Display controller pods status
+  ansible.builtin.debug:
+    msg: "PowerScale controller pods ready: {{ powerscale_controller_ready_count.stdout }}"
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 3: Wait for node daemonset to be ready
+# ───────────────────────────────────────────────────────────────────────────
+- name: Get PowerScale node daemonset status
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.command:
+    cmd: kubectl get daemonset isilon-node -n {{ powerscale_namespace }} -o json
+  register: powerscale_node_ds_status
+  changed_when: false
+
+- name: Parse daemonset status
+  ansible.builtin.set_fact:
+    powerscale_ds_desired: "{{ (powerscale_node_ds_status.stdout | from_json).status.desiredNumberScheduled }}"
+    powerscale_ds_ready: "{{ (powerscale_node_ds_status.stdout | from_json).status.numberReady }}"
+
+- name: Wait for PowerScale node daemonset to be ready
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.command:
+    cmd: kubectl get daemonset isilon-node -n {{ powerscale_namespace }} -o json
+  register: powerscale_node_ds_wait
+  until: >
+    (powerscale_node_ds_wait.stdout | from_json).status.numberReady ==
+    (powerscale_node_ds_wait.stdout | from_json).status.desiredNumberScheduled
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Display node daemonset status
+  ansible.builtin.debug:
+    msg: "PowerScale node daemonset ready: {{ powerscale_ds_ready }}/{{ powerscale_ds_desired }}"
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 4: Verify upgraded version
+# ───────────────────────────────────────────────────────────────────────────
+- name: Get upgraded PowerScale driver version
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      kubectl get pods -n {{ powerscale_namespace }} -l app=isilon-controller \
+        -o jsonpath='{.items[0].spec.containers[?(@.name=="driver")].image}' | \
+        grep -oP 'v\d+\.\d+\.\d+' || echo "unknown"
+    executable: /bin/bash
+  register: powerscale_upgraded_version
+  changed_when: false
+  failed_when: false
+
+- name: Display upgraded version
+  ansible.builtin.debug:
+    msg: "PowerScale CSI driver upgraded to version: {{ powerscale_upgraded_version.stdout }}"
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 5: Display upgrade summary
+# ───────────────────────────────────────────────────────────────────────────
+- name: Display PowerScale upgrade summary
+  ansible.builtin.debug:
+    msg:
+      - "PowerScale CSI driver upgrade completed successfully"
+      - "  From version: {{ powerscale_current_driver_version }}"
+      - "  To version: {{ powerscale_upgraded_version.stdout }}"
+      - "  Namespace: {{ powerscale_namespace }}"
+      - "  Helm release: {{ powerscale_release_name }}"
+      - "  Controller pods ready: {{ powerscale_controller_ready_count.stdout }}"
+      - "  Node daemonset ready: {{ powerscale_ds_ready }}/{{ powerscale_ds_desired }}"

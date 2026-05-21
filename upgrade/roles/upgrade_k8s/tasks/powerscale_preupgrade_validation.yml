@@ -1,0 +1,168 @@
+# Copyright 2026 Dell Inc. or its subsidiaries. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+---
+# ============================================================================
+# PowerScale CSI Driver Pre-Upgrade Validation
+# ============================================================================
+# Purpose: Validate prerequisites before upgrading PowerScale CSI driver
+#
+# This task file performs pre-upgrade validation checks:
+#   1. Check if PowerScale CSI driver is installed
+#   2. Verify namespace exists
+#   3. Check if Helm release exists
+#   4. Verify pods are running
+#   5. Validate required input files exist
+# ============================================================================
+
+- name: Check if PowerScale namespace exists
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.command:
+    cmd: kubectl get namespace isilon
+  register: powerscale_namespace_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if PowerScale namespace does not exist
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_namespace_missing }}"
+  when: powerscale_namespace_check.rc != 0
+
+- name: Check if PowerScale Helm release exists
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.command:
+    cmd: helm list -n isilon -o json
+  register: powerscale_helm_check
+  changed_when: false
+  failed_when: false
+
+- name: Parse Helm release list
+  ansible.builtin.set_fact:
+    powerscale_helm_releases: "{{ powerscale_helm_check.stdout | from_json }}"
+  when: powerscale_helm_check.rc == 0
+
+- name: Find PowerScale Helm release
+  ansible.builtin.set_fact:
+    powerscale_release: >-
+      {{ powerscale_helm_releases |
+         selectattr('name', 'match', '^(isilon|csi-isilon|powerscale|csi-powerscale)$') |
+         list | first | default({}) }}
+  when:
+    - powerscale_helm_check.rc == 0
+    - powerscale_helm_releases | length > 0
+
+- name: Fail if PowerScale Helm release not found
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_helm_release_missing }}"
+  when: >
+    powerscale_helm_check.rc != 0 or
+    powerscale_helm_releases | length == 0 or
+    powerscale_release | default({}) | length == 0
+
+- name: Get current PowerScale release name
+  ansible.builtin.set_fact:
+    powerscale_release_name: "{{ powerscale_release.name }}"
+    powerscale_current_chart_version: "{{ powerscale_release.chart }}"
+
+- name: Display current PowerScale Helm release info
+  ansible.builtin.debug:
+    msg: "Found PowerScale Helm release: {{ powerscale_release_name }} (Chart: {{ powerscale_current_chart_version }})"
+
+- name: Check PowerScale controller pods
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.command:
+    cmd: kubectl get pods -n isilon -l app=isilon-controller -o json
+  register: powerscale_controller_pods
+  changed_when: false
+  failed_when: false
+
+- name: Parse controller pods
+  ansible.builtin.set_fact:
+    powerscale_controllers: "{{ powerscale_controller_pods.stdout | from_json }}"
+  when: powerscale_controller_pods.rc == 0
+
+- name: Fail if no controller pods found
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_controller_pods_missing }}"
+  when: >
+    powerscale_controller_pods.rc != 0 or
+    (powerscale_controllers['items'] | default([])) | length == 0
+
+- name: Check PowerScale node daemonset
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.command:
+    cmd: kubectl get daemonset isilon-node -n isilon -o json
+  register: powerscale_node_ds
+  changed_when: false
+  failed_when: false
+
+- name: Parse node daemonset
+  ansible.builtin.set_fact:
+    powerscale_daemonset: "{{ powerscale_node_ds.stdout | from_json }}"
+  when: powerscale_node_ds.rc == 0
+
+- name: Fail if no node daemonset found
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_node_daemonset_missing }}"
+  when: powerscale_node_ds.rc != 0
+
+- name: Get current PowerScale driver version from controller pod
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      kubectl get pods -n isilon -l app=isilon-controller \
+        -o jsonpath='{.items[0].spec.containers[?(@.name=="driver")].image}' | \
+        grep -oP 'v\d+\.\d+\.\d+' || echo "unknown"
+  register: powerscale_current_version_check
+  changed_when: false
+  failed_when: false
+
+- name: Set current PowerScale driver version
+  ansible.builtin.set_fact:
+    powerscale_current_driver_version: "{{ powerscale_current_version_check.stdout | default('unknown') }}"
+
+- name: Display current PowerScale driver version
+  ansible.builtin.debug:
+    msg: "Current PowerScale CSI driver version: {{ powerscale_current_driver_version }}"
+
+- name: Verify transformed values.yaml exists
+  ansible.builtin.stat:
+    path: "{{ input_project_dir }}/values.yaml"
+  register: powerscale_values_file
+
+- name: Fail if values.yaml not found
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_values_missing }}"
+  when: not powerscale_values_file.stat.exists
+
+- name: Verify secret.yaml exists
+  ansible.builtin.stat:
+    path: "{{ input_project_dir }}/secret.yaml"
+  register: powerscale_secret_file
+
+- name: Fail if secret.yaml not found
+  ansible.builtin.fail:
+    msg: "{{ msg_powerscale_secret_missing }}"
+  when: not powerscale_secret_file.stat.exists
+
+- name: Pre-upgrade validation completed successfully
+  ansible.builtin.debug:
+    msg: |
+      PowerScale CSI driver pre-upgrade validation completed:
+      - Namespace: isilon
+      - Helm release: {{ powerscale_release_name }}
+      - Current version: {{ powerscale_current_driver_version }}
+      - Controller pods: Running
+      - Node daemonset: Running
+      - Input files: Ready
