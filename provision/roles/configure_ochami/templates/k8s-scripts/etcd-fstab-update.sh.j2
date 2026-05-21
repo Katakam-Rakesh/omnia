@@ -1,0 +1,358 @@
+#!/bin/bash
+{% raw %}
+# ==============================================================================
+# SCRIPT NAME : etcd-fstab-update.sh
+# LOCATION    : /usr/local/bin/etcd-fstab-update.sh (rendered from .j2 template)
+# PURPOSE     : Re-establish the /var/lib/etcd fstab entry on EVERY boot for
+#               diskless nodes (where /etc/fstab is reset on every boot from
+#               the network image). Re-detects the disk, refreshes the UUID,
+#               cleans duplicate/stale entries, and mounts.
+#
+# OPERATIONS  : 1. Discover all disks (BOSS detection by PCI subsystem + model)
+#               2. Select disk by index (BOSS first, fallback to OTHER)
+#               3. Verify partition + filesystem exist (non-destructive check)
+#               4. Get current UUID from blkid (authoritative)
+#               5. Remove ALL stale /var/lib/etcd entries from /etc/fstab
+#               6. Append the single canonical UUID-based fstab entry
+#               7. Reload systemd daemon
+#               8. Mount (or remount if mounted from wrong source)
+#               9. Verify mount succeeded
+#              10. Ensure etcd user/group exist
+#              11. Apply etcd ownership (etcd:etcd) and permissions (700)
+#
+# BOSS DETECTION (identical to etcd-disk-setup.sh):
+#   - NVMe BOSS (BOSS-N1): PCI subsystem string contains "BOSS"
+#   - SATA BOSS (BOSS-S1/S2): sysfs/lsblk model or /dev/disk/by-id contains "BOSS"
+#   - No model numbers are hardcoded — only keyword "BOSS" (case-insensitive)
+#
+# SAFETY      : NON-DESTRUCTIVE. Never wipes, partitions, or formats the disk.
+#               Only updates fstab and performs mount operations.
+# CONCURRENCY : Uses flock to prevent simultaneous execution.
+# USAGE       : etcd-fstab-update.sh [BOSS_INDEX] [OTHER_INDEX]
+#               Defaults: BOSS_INDEX=0, OTHER_INDEX=0
+#               MUST match the indexes used by etcd-disk-setup.sh
+# LOG FILE    : /var/log/etcd-fstab-update.log
+# ==============================================================================
+set -euo pipefail
+modprobe megaraid_sas 2>/dev/null || echo "$(date +%F_%T) [WARN] megaraid_sas not loaded (may not be needed)"
+modprobe nvme 2>/dev/null || echo "$(date +%F_%T) [WARN] nvme not loaded"
+modprobe ahci 2>/dev/null || echo "$(date +%F_%T) [WARN] ahci not loaded"
+modprobe sd_mod 2>/dev/null || echo "$(date +%F_%T) [WARN] sd_mod not loaded"
+dnf install -y gdisk
+udevadm settle --timeout=30 2>/dev/null || true
+sleep 5
+
+# ------------------------------------------------------------------------------
+# SECTION 1 — CONFIGURATION VARIABLES
+# These MUST match the values used in etcd-disk-setup.sh so that the same
+# disk is selected and the same mount semantics are applied.
+# ------------------------------------------------------------------------------
+LOGFILE="/var/log/etcd-fstab-update.log"
+MOUNT_POINT="/var/lib/etcd"
+MOUNT_OPTS="defaults,noatime,nodiratime,nofail"
+
+# Index selection (defaults 0; CLI args override)
+BOSS_INDEX="${1:-0}"
+OTHER_INDEX="${2:-0}"
+
+# ------------------------------------------------------------------------------
+# SECTION 2 — LOGGING SETUP
+# Redirect all stdout + stderr to both console and the log file via tee.
+# ------------------------------------------------------------------------------
+exec > >(tee -a "$LOGFILE") 2>&1
+echo "$(date +%F_%T) [INFO] ===== etcd-fstab-update.sh START ====="
+
+# ------------------------------------------------------------------------------
+# SECTION 3 — CONCURRENCY LOCK
+# Prevent multiple instances of this script from running simultaneously on
+# the same node. The lock is auto-released when the script exits.
+# ------------------------------------------------------------------------------
+exec 201>/var/run/etcd-fstab-update.lock
+if ! flock -n 201; then
+    echo "$(date +%F_%T) [ERROR] Another instance running" >&2
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
+# SECTION 4 — DISK DISCOVERY (DYNAMIC — NO HARDCODED MODELS)
+#
+# Detection logic is IDENTICAL to etcd-disk-setup.sh — guarantees the same
+# disk is selected on every boot, which is critical for diskless nodes.
+#
+# Phase 1: NVMe controllers — PCI subsystem contains "BOSS"?
+# Phase 2: SATA/SAS disks — sysfs model / lsblk model / by-id contains "BOSS"?
+# Skips: loop, CD-ROM, floppy, IDSDM
+# ------------------------------------------------------------------------------
+BOSS_DISKS=""
+OTHER_DISKS=""
+BOSS_COUNT=0
+OTHER_COUNT=0
+NVME_CLASSIFIED=""
+
+# --- Phase 1: NVMe controllers (PCI subsystem detection) ---
+for ctrl in /sys/class/nvme/nvme*; do
+    test -d "$ctrl" || continue
+    name=$(basename "$ctrl")
+    pci=$(cat "$ctrl/address" 2>/dev/null || echo "")
+    state=$(cat "$ctrl/state" 2>/dev/null || echo "unknown")
+
+    if test -z "$pci"; then
+        echo "$(date +%F_%T) [WARN] No PCI address for $name, skipping"
+        continue
+    fi
+
+    # Check PCI subsystem string for "BOSS" (case-insensitive)
+    subsys=$(lspci -D -s "$pci" -v 2>/dev/null | grep -i "Subsystem" || echo "")
+    is_boss="no"
+    echo "$subsys" | grep -qi "boss" && is_boss="yes"
+
+    # Find namespace block devices under this controller
+    ns_found=0
+    for ns in /sys/block/${name}n*; do
+        test -d "$ns" || continue
+        blkname=$(basename "$ns")
+        dev="/dev/$blkname"
+        size=$(lsblk -d -n -o SIZE "$dev" 2>/dev/null | xargs)
+        ns_found=1
+
+        # Mark as classified so Phase 2 skips it
+        NVME_CLASSIFIED="$NVME_CLASSIFIED $blkname"
+
+        if test "$is_boss" = "yes"; then
+            echo "$(date +%F_%T) [INFO] BOSS NVMe disk: $dev ($size) ctrl=$name pci=$pci"
+            BOSS_DISKS="$BOSS_DISKS $dev"
+            BOSS_COUNT=$((BOSS_COUNT + 1))
+        else
+            echo "$(date +%F_%T) [INFO] OTHER NVMe disk: $dev ($size) ctrl=$name pci=$pci"
+            OTHER_DISKS="$OTHER_DISKS $dev"
+            OTHER_COUNT=$((OTHER_COUNT + 1))
+        fi
+    done
+
+    if test "$ns_found" -eq 0; then
+        echo "$(date +%F_%T) [INFO] NVMe ctrl=$name pci=$pci boss=$is_boss state=$state — NO NAMESPACES"
+    fi
+done
+
+# --- Phase 2: SATA/SAS disks (covers BOSS-S1/S2 as sdX) ---
+while read -r blkname type; do
+    test -z "$blkname" && continue
+    test "$type" != "disk" && continue
+
+    # Skip loop, CD-ROM, floppy
+    case "$blkname" in loop*|sr*|fd*) continue;; esac
+
+    # Skip NVMe devices already classified in Phase 1
+    case "$blkname" in nvme*) continue;; esac
+
+    dev="/dev/$blkname"
+    size=$(lsblk -d -n -o SIZE "$dev" 2>/dev/null | xargs)
+
+    # --- BOSS detection for SATA/SAS disks (3 methods, no hardcoding) ---
+    is_boss="no"
+
+    # Method A: sysfs model string
+    sysfs_model=$(cat /sys/block/$blkname/device/model 2>/dev/null | xargs)
+    echo "$sysfs_model" | grep -qi "boss" && is_boss="yes"
+
+    # Method B: lsblk model string
+    lsblk_model=$(lsblk -d -n -o MODEL "$dev" 2>/dev/null | xargs)
+    echo "$lsblk_model" | grep -qi "boss" && is_boss="yes"
+
+    # Method C: /dev/disk/by-id symlink contains "boss"
+    if ls -l /dev/disk/by-id/ 2>/dev/null | grep "${blkname}$" | grep -qi "boss"; then
+        is_boss="yes"
+    fi
+
+    model="${sysfs_model:-$lsblk_model}"
+
+    # Skip Dell IDSDM (Internal Dual SD Module) — not suitable for etcd
+    case "$model" in
+        *IDSDM*|*idsdm*|_IDSDM_)
+            echo "$(date +%F_%T) [INFO] Skip IDSDM: $dev ($size)"
+            continue
+            ;;
+    esac
+
+    if test "$is_boss" = "yes"; then
+        echo "$(date +%F_%T) [INFO] BOSS SATA disk: $dev ($size, $model)"
+        BOSS_DISKS="$BOSS_DISKS $dev"
+        BOSS_COUNT=$((BOSS_COUNT + 1))
+    else
+        echo "$(date +%F_%T) [INFO] OTHER SATA/SAS disk: $dev ($size, $model)"
+        OTHER_DISKS="$OTHER_DISKS $dev"
+        OTHER_COUNT=$((OTHER_COUNT + 1))
+    fi
+done <<EOF
+$(lsblk -d -n -o NAME,TYPE)
+EOF
+
+# Trim leading/trailing whitespace from disk lists
+BOSS_DISKS=$(echo "$BOSS_DISKS" | xargs)
+OTHER_DISKS=$(echo "$OTHER_DISKS" | xargs)
+
+echo "$(date +%F_%T) [INFO] BOSS($BOSS_COUNT): ${BOSS_DISKS:-none}"
+echo "$(date +%F_%T) [INFO] OTHER($OTHER_COUNT): ${OTHER_DISKS:-none}"
+
+# ------------------------------------------------------------------------------
+# SECTION 5 — DISK SELECTION
+# Helper function to pick a disk by position in the space-separated list.
+# Priority: BOSS at BOSS_INDEX, fallback to OTHER at OTHER_INDEX.
+# Exits with an error if no suitable disks are found.
+# ------------------------------------------------------------------------------
+get_disk_by_index() {
+    echo "$1" | tr ' ' '\n' | sed -n "$(($2 + 1))p"
+}
+
+DISK=""
+if test "$BOSS_COUNT" -gt 0; then
+    # BOSS card(s) available — use the requested index
+    if test "$BOSS_INDEX" -ge "$BOSS_COUNT"; then
+        echo "$(date +%F_%T) [ERROR] BOSS_INDEX=$BOSS_INDEX out of range ($BOSS_COUNT found)" >&2
+        exit 1
+    fi
+    DISK=$(get_disk_by_index "$BOSS_DISKS" "$BOSS_INDEX")
+    echo "$(date +%F_%T) [OK] Selected BOSS[$BOSS_INDEX]: $DISK"
+elif test "$OTHER_COUNT" -gt 0; then
+    # No BOSS available — fall back to OTHER disks
+    if test "$OTHER_INDEX" -ge "$OTHER_COUNT"; then
+        echo "$(date +%F_%T) [ERROR] OTHER_INDEX=$OTHER_INDEX out of range ($OTHER_COUNT found)" >&2
+        exit 1
+    fi
+    DISK=$(get_disk_by_index "$OTHER_DISKS" "$OTHER_INDEX")
+    echo "$(date +%F_%T) [INFO] No BOSS found, using OTHER[$OTHER_INDEX]: $DISK"
+else
+    echo "$(date +%F_%T) [ERROR] No suitable disks found" >&2
+    exit 1
+fi
+
+# FIX: NVMe partition naming — nvme0n1 → nvme0n1p1 (not nvme0n11)
+case "$DISK" in
+    *nvme*) PART="${DISK}p1" ;;
+    *)      PART="${DISK}1"  ;;
+esac
+
+echo "$(date +%F_%T) [INFO] Target: $DISK -> $PART"
+
+# ------------------------------------------------------------------------------
+# SECTION 6 — PARTITION + FILESYSTEM PRE-FLIGHT CHECKS (NON-DESTRUCTIVE)
+# Verify the partition exists and contains a valid filesystem.
+# If either check fails, exit with an error — first-boot setup must run
+# before this script can succeed. This script NEVER creates partitions
+# or filesystems; that responsibility belongs to etcd-disk-setup.sh.
+# ------------------------------------------------------------------------------
+if ! lsblk "$PART" >/dev/null 2>&1; then
+    echo "$(date +%F_%T) [ERROR] $PART does not exist — run etcd-disk-setup.sh first" >&2
+    exit 1
+fi
+
+FSTYPE=$(blkid -s TYPE -o value "$PART" 2>/dev/null || true)
+if test -z "$FSTYPE"; then
+    echo "$(date +%F_%T) [ERROR] $PART has no filesystem — run etcd-disk-setup.sh first" >&2
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
+# SECTION 7 — UUID RETRIEVAL (AUTHORITATIVE)
+# Read the CURRENT UUID from the live device. This ensures we always use
+# the correct UUID, even if the disk has been reformatted between boots.
+# UUID-based mounts are recommended best practice because they remain
+# stable across reboots and survive device-name reordering.
+# ------------------------------------------------------------------------------
+# FIX: Use -p (low-level probe) to bypass stale blkid cache + retry
+UUID=""
+for i in $(seq 1 5); do
+    UUID=$(blkid -p -s UUID -o value "$PART" 2>/dev/null || true)
+    test -n "$UUID" && break
+    sleep 2
+done
+
+if test -z "$UUID"; then
+    echo "$(date +%F_%T) [ERROR] UUID lookup failed for $PART" >&2
+    exit 1
+fi
+echo "$(date +%F_%T) [INFO] Disk=$DISK Part=$PART UUID=$UUID FS=$FSTYPE"
+
+# ------------------------------------------------------------------------------
+# SECTION 8 — IDEMPOTENT FSTAB UPDATE
+# 1. Ensure the mount point directory exists
+# 2. Remove ALL existing entries for the mount point — this prevents
+#    duplicate accumulation, eliminates stale UUIDs, and clears any old
+#    NFS lines that may have been written by previous boots.
+# 3. Append the SINGLE canonical UUID-based entry with current values.
+# 4. Reload systemd so it picks up the new fstab entry.
+# This delete-then-append pattern is the standard way to make fstab
+# modifications idempotent.
+# ------------------------------------------------------------------------------
+# FIX: Guard MOUNT_POINT + backup fstab
+if test -z "$MOUNT_POINT"; then
+    echo "$(date +%F_%T) [ERROR] MOUNT_POINT is empty, aborting fstab edit" >&2
+    exit 1
+fi
+cp /etc/fstab "/etc/fstab.bak.$(date +%s)"
+
+mkdir -p "$MOUNT_POINT"
+sed -i "\|[[:space:]]${MOUNT_POINT}[[:space:]]|d" /etc/fstab
+echo "UUID=${UUID} ${MOUNT_POINT} ${FSTYPE} ${MOUNT_OPTS} 0 2" >> /etc/fstab
+echo "$(date +%F_%T) [OK] fstab updated: UUID=${UUID} -> ${MOUNT_POINT} (${FSTYPE})"
+
+# FIX: Reload systemd mount unit cache after fstab change
+systemctl daemon-reload 2>/dev/null || true
+echo "$(date +%F_%T) [OK] systemd daemon reloaded"
+
+# ------------------------------------------------------------------------------
+# SECTION 9 — MOUNT (IDEMPOTENT)
+# Three possible states:
+#   a) Mount point is mounted from the correct source → no action
+#   b) Mount point is mounted from a different source → remount cleanly
+#   c) Mount point is not mounted → mount fresh
+# FIX: Use realpath to resolve symlinks/aliases on both sides before
+# comparing, avoiding spurious remounts when findmnt returns UUID alias.
+# Final verification ensures the mount actually succeeded before continuing.
+# ------------------------------------------------------------------------------
+if mountpoint -q "$MOUNT_POINT"; then
+    current_raw=$(findmnt -no SOURCE "$MOUNT_POINT" 2>/dev/null || echo "unknown")
+    # Resolve symlinks/aliases on both sides for reliable comparison
+    current=$(realpath "$current_raw" 2>/dev/null || echo "$current_raw")
+    expected=$(realpath "$PART" 2>/dev/null || echo "$PART")
+
+    if test "$current" != "$expected"; then
+        echo "$(date +%F_%T) [INFO] Remounting (was $current_raw, need $PART)"
+        umount "$MOUNT_POINT"
+        mount "$MOUNT_POINT"
+    else
+        echo "$(date +%F_%T) [INFO] Already mounted correctly ($current)"
+    fi
+else
+    mount "$MOUNT_POINT"
+fi
+
+if ! mountpoint -q "$MOUNT_POINT"; then
+    echo "$(date +%F_%T) [ERROR] Mount verification failed for $MOUNT_POINT" >&2
+    exit 1
+fi
+echo "$(date +%F_%T) [OK] Mounted: $PART -> $MOUNT_POINT"
+
+# ------------------------------------------------------------------------------
+# SECTION 10 — ETCD USER, OWNERSHIP & PERMISSIONS
+# Ensure the etcd system user/group exist (create if missing — needed
+# because diskless nodes may reset their user database from the image).
+# Apply recursive ownership and the etcd-recommended 700 directory mode.
+# Re-applying on every boot is idempotent and harmless.
+# ------------------------------------------------------------------------------
+getent group etcd >/dev/null 2>&1 || groupadd --system etcd
+id etcd >/dev/null 2>&1       || useradd --system --no-create-home \
+                                          --shell /sbin/nologin \
+                                          --gid etcd etcd
+chown -R etcd:etcd "$MOUNT_POINT"
+chmod 700 "$MOUNT_POINT"
+echo "$(date +%F_%T) [OK] Ownership etcd:etcd, mode 700"
+
+# ------------------------------------------------------------------------------
+# SECTION 11 — FINAL STATUS REPORT
+# Show the mount point ownership/mode and filesystem usage.
+# ------------------------------------------------------------------------------
+ls -ld "$MOUNT_POINT"
+df -h "$MOUNT_POINT"
+echo "$(date +%F_%T) [OK] ===== etcd-fstab-update.sh DONE ====="
+{% endraw %}

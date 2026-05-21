@@ -85,6 +85,18 @@
             logdir /var/log/chrony
             cmdport 0
 
+        - path: /usr/local/bin/etcd-disk-setup.sh
+          owner: root:root
+          permissions: '{{ file_mode_755 }}'
+          content: |
+            {{ lookup('template', 'templates/k8s-configs/etcd-disk-setup.sh.j2') | indent(12) }}
+
+        - path: /usr/local/bin/etcd-fstab-update.sh
+          owner: root:root
+          permissions: '{{ file_mode_755 }}'
+          content: |
+            {{ lookup('template', 'templates/k8s-configs/etcd-fstab-update.sh.j2') | indent(12) }}
+
         - path: /etc/modules-load.d/k8s.conf
           content: |
             br_netfilter
@@ -355,7 +367,14 @@
 {% endfor %}
         # K8s NFS mount entries
         - mkdir -p /tmp/crio-storage {{ k8s_client_mount_path }} /var/lib/etcd  /var/lib/kubelet /etc/kubernetes /var/log/pods /var/lib/packages
+{% if etcd_on_local_disk | default(false) == true %}
+        # etcd_on_local_disk=true → call non-destructive fstab updater every boot
+        # This re-detects the BOSS disk, removes any duplicate/stale /var/lib/etcd
+        # entries, appends one canonical UUID-based entry, and mounts. NEVER wipes.
+        - /usr/local/bin/etcd-fstab-update.sh
+{% else %}
         - echo "{{ k8s_nfs_server_path }}/{% raw %}{{ ds.meta_data.instance_data.local_ipv4 }}{% endraw %}/etcd      /var/lib/etcd        nfs noatime,nolock 0 0" >> /etc/fstab
+{% endif %}
         - echo "{{ k8s_nfs_server_path }}/{% raw %}{{ ds.meta_data.instance_data.local_ipv4 }}{% endraw %}/kubelet   /var/lib/kubelet     nfs noatime,nolock 0 0" >> /etc/fstab
         - echo "{{ k8s_nfs_server_path }}/{% raw %}{{ ds.meta_data.instance_data.local_ipv4 }}{% endraw %}/kubernetes   /etc/kubernetes      nfs noatime,nolock 0 0" >> /etc/fstab
         - echo "{{ k8s_nfs_server_path }}/{% raw %}{{ ds.meta_data.instance_data.local_ipv4 }}{% endraw %}/pod-logs   /var/log/pods      nfs noatime,nolock 0 0" >> /etc/fstab
@@ -474,6 +493,12 @@
             mv /tmp/ipaddress_pool.yaml {{ k8s_client_mount_path }}/metallb/ipaddress_pool.yaml
             mv /tmp/l2advertisement.yaml {{ k8s_client_mount_path }}/metallb/l2advertisement.yaml
             # Setup Kubernetes cluster
+{% if etcd_on_local_disk | default(false) == true %}
+            # etcd_on_local_disk=true → first-boot DESTRUCTIVE BOSS disk provisioning
+            # Wipes + partitions + formats + writes fstab + mounts /var/lib/etcd.
+            # This block runs ONCE ONLY on first boot.
+            /usr/local/bin/etcd-disk-setup.sh
+{% endif %}
             rm -rf /var/lib/etcd/*  /var/lib/kubelet/* /etc/kubernetes/*
             rm -rf /var/lib/etcd/.*  /var/lib/kubelet/.* /etc/kubernetes/.*
             #!/bin/bash
