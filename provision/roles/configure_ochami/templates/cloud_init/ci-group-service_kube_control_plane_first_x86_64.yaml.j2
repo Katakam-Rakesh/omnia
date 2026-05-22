@@ -89,13 +89,13 @@
           owner: root:root
           permissions: '{{ file_mode_755 }}'
           content: |
-            {{ lookup('template', 'templates/k8s-configs/etcd-disk-setup.sh.j2') | indent(12) }}
+            {{ lookup('template', 'templates/k8s-scripts/etcd-disk-setup.sh.j2') | indent(12) }}
 
         - path: /usr/local/bin/etcd-fstab-update.sh
           owner: root:root
           permissions: '{{ file_mode_755 }}'
           content: |
-            {{ lookup('template', 'templates/k8s-configs/etcd-fstab-update.sh.j2') | indent(12) }}
+            {{ lookup('template', 'templates/k8s-scripts/etcd-fstab-update.sh.j2') | indent(12) }}
 
         - path: /etc/modules-load.d/k8s.conf
           content: |
