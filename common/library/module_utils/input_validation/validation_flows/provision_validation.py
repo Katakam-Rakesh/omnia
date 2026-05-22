@@ -30,7 +30,6 @@ from ansible.module_utils.input_validation.validation_flows import common_valida
 file_names = config.files
 create_error_msg = validation_utils.create_error_msg
 create_file_path = validation_utils.create_file_path
-ib_mac_re = re.compile(r"^([0-9A-Fa-f]{2}:){7}[0-9A-Fa-f]{2}$")
 
 # Expected header columns (case-insensitive)
 required_headers = [
@@ -405,7 +404,7 @@ def validate_mapping_file_entries(mapping_file_path):
     # Pre-compile regexes
     mac_re = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$")
     hostname_re = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$")
-    group_re = re.compile(r"^(?:grp(?:[0-9]|[1-9][0-9]|100)|[Ss][Uu](?:[1-9]|[1-9][0-9]|100))$")
+    group_re = re.compile(r"^(?:grp(?:[0-9]|[1-9][0-9]|100)|[Ss][Uu][A-Za-z]?(?:0*[1-9][0-9]?|100))$")
     fg_re = re.compile(r"^[A-Za-z0-9_]+$")
 
     row_seen = False
@@ -456,7 +455,7 @@ def validate_mapping_file_entries(mapping_file_path):
 
         # GROUP_NAME format
         if not group_re.match(group_name):
-            raise ValueError(f"Invalid GROUP_NAME: '{group_name}' at CSV row {row_idx} in mapping file. Must be in format grp0 to grp100 or SU1 to SU100.")
+            raise ValueError(f"Invalid GROUP_NAME: '{group_name}' at CSV row {row_idx} in mapping file. Must be grp0-grp100 or SU[A-Z]1-100 (e.g. SU1, SU01, SUA99).")
 
         # FUNCTIONAL_GROUP_NAME format
         if not fg_re.match(fg_name):
@@ -468,20 +467,14 @@ def validate_mapping_file_entries(mapping_file_path):
         if bmc_ip and not validation_utils.validate_ipv4(bmc_ip):
             raise ValueError(f"Invalid BMC_IP: '{bmc_ip}' at CSV row {row_idx} in mapping file.")
 
-        ib_mac_col = fieldname_map.get("IB_MAC")
+        ib_nic_col = fieldname_map.get("IB_NIC_NAME")
         ib_ip_col = fieldname_map.get("IB_IP")
-        ib_mac = row.get(ib_mac_col, "").strip() if ib_mac_col and row.get(ib_mac_col) else ""
+        ib_nic_name = row.get(ib_nic_col, "").strip() if ib_nic_col and row.get(ib_nic_col) else ""
         ib_ip = row.get(ib_ip_col, "").strip() if ib_ip_col and row.get(ib_ip_col) else ""
 
-        if bool(ib_mac) != bool(ib_ip):
+        if bool(ib_nic_name) != bool(ib_ip):
             raise ValueError(
-                f"IB_MAC and IB_IP must both be provided or both be empty at CSV row {row_idx} in mapping file."
-            )
-
-        if ib_mac and not ib_mac_re.match(ib_mac):
-            raise ValueError(
-                f"Invalid IB_MAC: '{ib_mac}' at CSV row {row_idx} in mapping file. "
-                "Expected format: xx:xx:xx:xx:xx:xx:xx:xx."
+                f"IB_NIC_NAME and IB_IP must both be provided or both be empty at CSV row {row_idx} in mapping file."
             )
 
         if ib_ip and not validation_utils.validate_ipv4(ib_ip):
@@ -1442,3 +1435,21 @@ def _ranges_overlap(range_a, range_b):
         return a_start <= b_end and b_start <= a_end
     except (ValueError, TypeError):
         return False
+
+
+
+def validate_dns_config(data):
+    """
+    Validates dns_config input parameters.
+
+    dns_config.yml only contains dns_enabled (boolean).
+    The cluster domain is read from OIM metadata (domain_name).
+
+    Args:
+        data (dict): The dns_config dict from dns_config.yml.
+
+    Returns:
+        list: Validation error messages (currently empty; schema
+        validation handles the dns_enabled type check).
+    """
+    return []
