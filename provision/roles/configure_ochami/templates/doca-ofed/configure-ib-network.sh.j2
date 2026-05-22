@@ -54,16 +54,20 @@ echo "Target IB IP: $IB_IP"
 SLOT_NUMBER=""
 PORT_NUMBER=""
 
+echo "DEBUG: Parsing IB_NIC_NAME format: '$IB_NIC_NAME'"
+
 if [[ "$IB_NIC_NAME" =~ ^(InfiniBand\.PCIe\.Slot\.|InfiniBand\.Slot\.|NIC\.InfiniBand\.)([0-9]+)-([0-9]+)$ ]]; then
     SLOT_NUMBER="${BASH_REMATCH[2]}"
     PORT_NUMBER="${BASH_REMATCH[3]}"
-    echo "Extracted slot number: $SLOT_NUMBER"
-    echo "Extracted port number: $PORT_NUMBER"
+    echo "INFO: Successfully parsed slot-based format"
+    echo "INFO: Extracted slot number: $SLOT_NUMBER"
+    echo "INFO: Extracted port number: $PORT_NUMBER"
 elif [[ "$IB_NIC_NAME" =~ ^InfiniBand\.Single-([0-9]+)$ ]]; then
     PORT_NUMBER="${BASH_REMATCH[1]}"
-    echo "Single-port device detected, port number: $PORT_NUMBER"
+    echo "INFO: Successfully parsed single-port format"
+    echo "INFO: Single-port device detected, port number: $PORT_NUMBER"
 else
-    echo "ERROR: Invalid IB_NIC_NAME format: $IB_NIC_NAME"
+    echo "ERROR: Failed to parse IB_NIC_NAME format: '$IB_NIC_NAME'"
     echo "ERROR: Expected formats:"
     echo "  - 'InfiniBand.PCIe.Slot.X-Y' (slot X, port Y)"
     echo "  - 'InfiniBand.Slot.X-Y' (slot X, port Y)"
@@ -80,11 +84,30 @@ fi
 
 # Count mlx5 devices to determine mapping strategy
 MLX5_DEVICE_COUNT=$(ls /sys/class/infiniband/ | grep mlx5 | wc -l)
-echo "Found $MLX5_DEVICE_COUNT mlx5 device(s)"
+echo "=== IB NETWORK CONFIGURATION LOGGING STARTED ==="
+echo "INFO: Found $MLX5_DEVICE_COUNT mlx5 device(s) on this system"
+echo "INFO: Target IB NIC name from PXE mapping: $IB_NIC_NAME"
+echo "INFO: Target IB IP from PXE mapping: $IB_IP"
+
+# List all available mlx5 devices for debugging
+echo "DEBUG: Available mlx5 devices on this system:"
+for mlx_device in /sys/class/infiniband/mlx5_*; do
+    [ -e "$mlx_device" ] || continue
+    device_name=$(basename "$mlx_device")
+    pci_address=$(basename "$(readlink -f "/sys/class/infiniband/$device_name/device" 2>/dev/null)")
+    if [ -n "$pci_address" ]; then
+        pci_slot=$(echo "$pci_address" | cut -d: -f2 | sed 's/^0*//')
+        echo "DEBUG:   Device: $device_name, PCI: $pci_address, Slot: $pci_slot"
+    else
+        echo "DEBUG:   Device: $device_name, PCI: Not available"
+    fi
+done
 
 # Simple slot-to-device mapping function
 find_device_by_slot() {
     local target_slot="$1"
+    
+    echo "DEBUG: Starting slot-based device search for slot '$target_slot'"
     
     for mlx_device in /sys/class/infiniband/mlx5_*; do
         [ -e "$mlx_device" ] || continue
@@ -97,71 +120,100 @@ find_device_by_slot() {
             pci_slot=$(echo "$pci_address" | cut -d: -f2 | sed 's/^0*//')
             target_clean=$(echo "$target_slot" | sed 's/^0*//')
             
-            echo "DEBUG: $device_name → PCI $pci_address → slot $pci_slot"
+            echo "DEBUG: Checking device $device_name: PCI $pci_address → slot $pci_slot (target: $target_clean)"
             
             if [[ "$pci_slot" == "$target_clean" ]]; then
+                echo "SUCCESS: Found matching device! Slot $target_clean matches PCI slot $pci_slot for device $device_name"
                 echo "$device_name"
                 return 0
+            else
+                echo "DEBUG: Slot mismatch - device $device_name has PCI slot $pci_slot, looking for slot $target_clean"
             fi
+        else
+            echo "DEBUG: Could not get PCI address for device $device_name"
         fi
     done
+    
+    echo "ERROR: No device found matching slot '$target_slot'"
     return 1
 }
 
 # Select mlx5 device based on device count and slot information
 if [ "$MLX5_DEVICE_COUNT" -gt 1 ] && [ -n "$SLOT_NUMBER" ]; then
-    echo "INFO: Multiple mlx5 devices detected, using slot-based mapping"
-    echo "INFO: Looking for device in slot $SLOT_NUMBER"
+    echo "INFO: MULTI-DEVICE MODE: Multiple mlx5 devices detected ($MLX5_DEVICE_COUNT)"
+    echo "INFO: MULTI-DEVICE MODE: Using slot-based mapping for slot '$SLOT_NUMBER'"
     
     MLX5_DEVICE=$(find_device_by_slot "$SLOT_NUMBER")
     
     if [ -z "$MLX5_DEVICE" ]; then
-        echo "ERROR: No mlx5 device found for slot $SLOT_NUMBER"
-        echo "ERROR: Available mlx5 devices:"
+        echo "ERROR: SLOT MISMATCH: No mlx5 device found for slot '$SLOT_NUMBER'"
+        echo "ERROR: SLOT MISMATCH: This indicates the slot number in PXE mapping doesn't match any hardware PCI slot"
+        echo "ERROR: Available mlx5 devices with their PCI slots:"
         for mlx_device in /sys/class/infiniband/mlx5_*; do
             [ -e "$mlx_device" ] || continue
             device_name=$(basename "$mlx_device")
             pci_address=$(basename "$(readlink -f "/sys/class/infiniband/$device_name/device" 2>/dev/null)")
             if [ -n "$pci_address" ]; then
                 pci_slot=$(echo "$pci_address" | cut -d: -f2 | sed 's/^0*//')
-                echo "  $device_name: PCI $pci_address (slot $pci_slot)"
+                echo "  - $device_name: PCI $pci_address (slot $pci_slot)"
             else
-                echo "  $device_name: PCI information not available"
+                echo "  - $device_name: PCI information not available"
             fi
         done
+        echo "ERROR: SLOT MISMATCH: Please update PXE mapping file with correct PCI slot numbers"
         exit 1
     fi
     
-    echo "SUCCESS: Found mlx5 device $MLX5_DEVICE for slot $SLOT_NUMBER"
+    echo "SUCCESS: SLOT MATCHING: Found mlx5 device $MLX5_DEVICE for slot '$SLOT_NUMBER'"
+    echo "SUCCESS: SLOT MATCHING: Slot-based device selection successful"
 else
-    echo "INFO: Using device-based mapping (single device or no slot specified)"
+    if [ "$MLX5_DEVICE_COUNT" -eq 1 ]; then
+        echo "INFO: SINGLE-DEVICE MODE: Only one mlx5 device detected"
+        echo "INFO: SINGLE-DEVICE MODE: Using fallback device selection (ignoring slot number)"
+        echo "INFO: SINGLE-DEVICE MODE: This works for single-device setups even with incorrect slot numbers"
+    else
+        echo "INFO: FALLBACK MODE: Multiple devices detected but no slot number specified"
+        echo "INFO: FALLBACK MODE: Using first available device"
+    fi
+    
     MLX5_DEVICE=$(ls /sys/class/infiniband/ | grep mlx5 | head -1)
     if [ -z "$MLX5_DEVICE" ]; then
         echo "ERROR: No mlx5 device found in /sys/class/infiniband/"
         exit 1
     fi
+    
+    echo "INFO: FALLBACK DEVICE: Selected $MLX5_DEVICE (first available device)"
 fi
 
-echo "Selected mlx5 device: $MLX5_DEVICE"
+echo "INFO: FINAL DEVICE SELECTION: Using mlx5 device '$MLX5_DEVICE'"
 
 # Check if the specified port exists
 PORT_PATH="/sys/class/infiniband/${MLX5_DEVICE}/ports/${PORT_NUMBER}"
+echo "DEBUG: Checking if port $PORT_NUMBER exists on device $MLX5_DEVICE"
+echo "DEBUG: Port path: $PORT_PATH"
+
 if [ ! -d "$PORT_PATH" ]; then
-    echo "ERROR: Port ${PORT_NUMBER} does not exist for device ${MLX5_DEVICE}"
-    echo "ERROR: Available ports:"
-    ls -la /sys/class/infiniband/${MLX5_DEVICE}/ports/
+    echo "ERROR: PORT NOT FOUND: Port ${PORT_NUMBER} does not exist for device ${MLX5_DEVICE}"
+    echo "ERROR: PORT NOT FOUND: Available ports on device $MLX5_DEVICE:"
+    ls -la /sys/class/infiniband/${MLX5_DEVICE}/ports/ 2>/dev/null || echo "ERROR: No ports directory found"
     exit 1
+else
+    echo "SUCCESS: Port validation passed - port $PORT_NUMBER exists on device $MLX5_DEVICE"
 fi
 
 # Retrieve GUID from the specified port
 GUID_PATH="${PORT_PATH}/gids/0"
+echo "DEBUG: Retrieving GUID from port $PORT_NUMBER on device $MLX5_DEVICE"
+echo "DEBUG: GUID path: $GUID_PATH"
+
 if [ ! -f "$GUID_PATH" ]; then
-    echo "ERROR: GUID file not found at ${GUID_PATH}"
+    echo "ERROR: GUID NOT FOUND: GUID file not found at ${GUID_PATH}"
+    echo "ERROR: GUID NOT FOUND: Cannot proceed with interface matching without GUID"
     exit 1
 fi
 
 GUID=$(cat "$GUID_PATH")
-echo "Retrieved GUID: $GUID"
+echo "SUCCESS: Retrieved GUID from hardware: $GUID"
 
 # Convert GUID to individual octets for comparison
 # GUID format: fe80:0000:0000:0000:946d:ae03:008c:108c
@@ -179,13 +231,25 @@ if len(parts) >= 8:
         octets.append(part[2:])
     print(':'.join(octets))
 ")
-echo "GUID octets for comparison: $GUID_OCTETS"
+echo "SUCCESS: GUID octets for interface comparison: $GUID_OCTETS"
 
 # Find the IB interface by comparing octets
+echo "DEBUG: Starting IB interface search using GUID matching"
 IB_INTERFACE=""
+
+# List all available IB interfaces first
+echo "DEBUG: Available IB interfaces on this system:"
 for iface in $(ip link show | grep -E "^[0-9]+: ib" | awk -F: '{print $2}'); do
+    echo "DEBUG: Found IB interface: $iface"
+done
+
+for iface in $(ip link show | grep -E "^[0-9]+: ib" | awk -F: '{print $2}'); do
+    echo "DEBUG: Checking interface $iface for GUID match"
+    
     # Get the full address from the interface and extract the last 8 octets
     full_addr=$(ip link show "$iface" | grep "link/infiniband" | sed 's/.*link\/infiniband //' | sed 's/ brd.*//')
+    echo "DEBUG: Interface $iface full address: $full_addr"
+    
     # Extract the last 8 octets (fields 13-20) and format with colons for comparison
     iface_octets=$(echo "$full_addr" | cut -d: -f13-20 | python3 -c "
 import sys
@@ -194,56 +258,89 @@ if len(parts) >= 8:
     formatted = f'{parts[0]}:{parts[1]}:{parts[2]}:{parts[3]}:{parts[4]}:{parts[5]}:{parts[6]}:{parts[7]}'
     print(formatted)
 ")
-    echo "Interface $iface octets: $iface_octets"
+    echo "DEBUG: Interface $iface octets: $iface_octets (target: $GUID_OCTETS)"
+    
     if [ "$iface_octets" = "$GUID_OCTETS" ]; then
+        echo "SUCCESS: GUID MATCH FOUND! Interface $iface matches hardware GUID"
         IB_INTERFACE="$iface"
         break
+    else
+        echo "DEBUG: GUID mismatch - interface $iface does not match target GUID"
     fi
 done
 
 if [ -z "$IB_INTERFACE" ]; then
-    echo "ERROR: No IB interface found with GUID octets $GUID_OCTETS"
-    echo "ERROR: Available IB interfaces:"
+    echo "ERROR: INTERFACE NOT FOUND: No IB interface found with GUID octets $GUID_OCTETS"
+    echo "ERROR: INTERFACE NOT FOUND: This indicates a hardware/software mismatch"
+    echo "ERROR: INTERFACE NOT FOUND: Available IB interfaces with their GUID octets:"
     for iface in $(ip link show | grep -E "^[0-9]+: ib" | awk -F: '{print $2}'); do
         full_addr=$(ip link show "$iface" | grep "link/infiniband" | sed 's/.*link\/infiniband //' | sed 's/ brd.*//')
         iface_octets=$(echo "$full_addr" | cut -d: -f13-20 | python3 -c "
 import sys
 parts = sys.stdin.read().strip().split(':')
 if len(parts) >= 8:
-    formatted = f'{parts[0]}{parts[1]}:{parts[2]}{parts[3]}:{parts[4]}{parts[5]}{parts[6]}{parts[7]}'
+    formatted = f'{parts[0]}{parts[1]}:{parts[2]}{parts[3]}:{parts[4]}{parts[5]}:{parts[6]}{parts[7]}'
     print(formatted)
 ")
-        echo "  $iface: $iface_octets"
+        echo "  - $iface: $iface_octets"
     done
     exit 1
 fi
 
-echo "SUCCESS: Found IB interface $IB_INTERFACE"
+echo "SUCCESS: INTERFACE SELECTION: Found IB interface $IB_INTERFACE matching hardware GUID"
 
 if command -v nmcli >/dev/null 2>&1; then
-  echo "Configuring IB interface using NetworkManager"
+  echo "INFO: IP CONFIGURATION: Using NetworkManager to configure IB interface"
+  echo "DEBUG: IP CONFIGURATION: Target IP $IB_IP/$NETMASK_BITS on interface $IB_INTERFACE"
+  
+  echo "DEBUG: IP CONFIGURATION: Removing existing NetworkManager connection for $IB_INTERFACE"
   nmcli con delete "$IB_INTERFACE" &>/dev/null || true
+  
+  echo "DEBUG: IP CONFIGURATION: Creating new NetworkManager connection for $IB_INTERFACE"
   nmcli con add type infiniband ifname "$IB_INTERFACE" con-name "$IB_INTERFACE"
+  
+  echo "DEBUG: IP CONFIGURATION: Setting IP address $IB_IP/$NETMASK_BITS on $IB_INTERFACE"
   nmcli con modify "$IB_INTERFACE" ipv4.method manual ipv4.addresses "$IB_IP/$NETMASK_BITS"
+  
+  echo "DEBUG: IP CONFIGURATION: Bringing up NetworkManager connection for $IB_INTERFACE"
   nmcli con up "$IB_INTERFACE"
+  
+  echo "SUCCESS: IP CONFIGURATION: NetworkManager successfully configured $IB_INTERFACE with IP $IB_IP/$NETMASK_BITS"
 else
-  echo "Configuring IB interface using iproute2"
+  echo "INFO: IP CONFIGURATION: Using iproute2 to configure IB interface (NetworkManager not available)"
+  echo "DEBUG: IP CONFIGURATION: Target IP $IB_IP/$NETMASK_BITS on interface $IB_INTERFACE"
+  
+  echo "DEBUG: IP CONFIGURATION: Flushing existing IP addresses from $IB_INTERFACE"
   ip addr flush dev "$IB_INTERFACE"
+  
+  echo "DEBUG: IP CONFIGURATION: Adding IP address $IB_IP/$NETMASK_BITS to $IB_INTERFACE"
   ip addr add "$IB_IP/$NETMASK_BITS" dev "$IB_INTERFACE"
+  
+  echo "DEBUG: IP CONFIGURATION: Bringing up interface $IB_INTERFACE"
   ip link set "$IB_INTERFACE" up
+  
+  echo "SUCCESS: IP CONFIGURATION: iproute2 successfully configured $IB_INTERFACE with IP $IB_IP/$NETMASK_BITS"
 fi
 
-echo "SUCCESS: Assigned $IB_IP/$NETMASK_BITS to $IB_INTERFACE"
+echo "SUCCESS: FINAL IP ASSIGNMENT: Successfully assigned $IB_IP/$NETMASK_BITS to IB interface $IB_INTERFACE"
 
 # Configure DNS for InfiniBand network
 if [ -n "$IB_IP" ]; then
-    echo "Configuring DNS for InfiniBand interface"
+    echo "INFO: DNS CONFIGURATION: Configuring DNS for InfiniBand interface"
     
     # Add VAST DNS servers (completely safe - handles empty arrays)
     {% for dns_server in hostvars['localhost']['ib_network_dns'] %}
+    echo "DEBUG: DNS CONFIGURATION: Adding DNS server {{ dns_server }}"
     echo "nameserver {{ dns_server }}" >> /etc/resolv.conf
     {% endfor %}
     
-    echo "SUCCESS: DNS configured for IB network"
+    echo "SUCCESS: DNS CONFIGURATION: DNS configuration completed for IB network"
+else
+    echo "INFO: DNS CONFIGURATION: No DNS configuration needed (IB IP is empty)"
 fi
+
+echo "=== IB NETWORK CONFIGURATION COMPLETED SUCCESSFULLY ==="
+echo "SUMMARY: IB interface $IB_INTERFACE configured with IP $IB_IP/$NETMASK_BITS"
+echo "SUMMARY: Device used: $MLX5_DEVICE, Port: $PORT_NUMBER"
+echo "SUMMARY: Configuration method: $([ -n "$SLOT_NUMBER" ] && echo "Slot-based mapping" || echo "Fallback device selection")"
  
