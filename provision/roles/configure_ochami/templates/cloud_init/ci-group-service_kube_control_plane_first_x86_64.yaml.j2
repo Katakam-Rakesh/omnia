@@ -830,7 +830,7 @@ PYEOF
               mkdir -p /opt/omnia
               POWERSCALE_DEPLOYMENT_FAILED=0
 
-              if cp -rp {{ k8s_client_mount_path }}/csi-driver-powerscale /opt/omnia/; then
+              if cp -rp {{ k8s_client_mount_path }}/{{ csi_powerscale_dir }} /opt/omnia/; then
                 echo "Copied CSI PowerScale driver to /opt/omnia successfully."
               else
                 echo "ERROR: Failed to copy PowerScale driver. Skipping PowerScale deployment."
