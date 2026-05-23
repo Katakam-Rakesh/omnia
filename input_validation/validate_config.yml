@@ -97,8 +97,8 @@
       when: "'local_repo' in (hostvars['localhost']['omnia_run_tags'] | default(ansible_run_tags) | default([])) or 'all' in (ansible_run_tags | default([]))"
 
 - name: Configure RHEL repository URLs
-  hosts: localhost
-  connection: local
+  hosts: oim
+  connection: ssh
   gather_facts: false
   tags:
     - always

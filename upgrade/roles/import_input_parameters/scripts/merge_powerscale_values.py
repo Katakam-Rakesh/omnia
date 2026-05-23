@@ -43,7 +43,6 @@ def merge_values(v21_file_path, v216_file_path, output_file_path):
     preserve_params = [
         'isiPath',
         'isiAccessZone',
-        'controllerCount',
         'logLevel',
         'arrayConnectivityPollRate',
     ]
@@ -81,12 +80,12 @@ def merge_values(v21_file_path, v216_file_path, output_file_path):
         if 'controller' not in v216_values:
             v216_values['controller'] = {}
 
-        controller_params = ['nodeSelector', 'tolerations']
+        controller_params = ['nodeSelector', 'tolerations', 'controllerCount']
         for param in controller_params:
             if param in v21_values['controller']:
                 v216_values['controller'][param] = \
                     v21_values['controller'][param]
-                print(f"Preserved controller.{param}", file=sys.stderr)
+                print(f"Preserved controller.{param}: {v21_values['controller'][param]}", file=sys.stderr)
 
     # Preserve node settings
     if 'node' in v21_values and isinstance(v21_values['node'], dict):
