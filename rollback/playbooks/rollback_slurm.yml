@@ -73,19 +73,24 @@
   connection: ssh
   gather_facts: false
   vars:
+    rollback_manifest_path: /opt/omnia/.data/rollback_manifest.yml
     # TODO: From backup_dir 2.1 directory
-    # openchami_work_dir: "{{ hostvars['localhost']['oim_shared_path'] }}/omnia/openchami21/workdir"
-    openchami_work_dir: "{{ hostvars['localhost']['oim_shared_path'] }}/omnia/openchami/workdir"
+    # openchami_work_dir: "{{ hostvars['localhost']['oim_shared_path'] }}/omnia/openchami/workdir"
   tasks:
     - name: Skip if slurm upgrade not needed
       ansible.builtin.meta: end_play
       when:
         - hostvars['localhost']['slurm_skip'] | default(false) | bool
 
+    - name: Read rollback_manifest.yml
+      ansible.builtin.include_vars:
+        file: "{{ rollback_manifest_path }}"
+        name: rollback_manifest
+
     - name: Read software_config.json
       ansible.builtin.include_vars:
       # TODO: From backup_dir 2.1 directory
-        file: "{{ hostvars['localhost']['input_project_dir'] }}/software_config.json"
+        file: "{{ rollback_manifest.backup_dir }}/input/project_default/software_config.json"
         name: software_config
 
     - name: Notify slurm not configured and end play
@@ -102,13 +107,13 @@
     - name: Include omnia_config
       ansible.builtin.include_vars:
         # TODO: From backup_dir 2.1 directory
-        file: "{{ hostvars['localhost']['input_project_dir'] }}/provision_config.yml"
+        file: "{{ rollback_manifest.backup_dir }}/input/project_default/provision_config.yml"
         name: provision_config
 
     - name: Read pxe_mapping_file
       community.general.read_csv:
         # TODO: path from prev provision config but may point to fresh path /opt/omnia and not backup_dir
-        path: "{{ provision_config.pxe_mapping_file_path }}"
+        path: "{{ rollback_manifest.backup_dir }}/input/project_default/{{ provision_config.pxe_mapping_file_path | basename }}"
       register: pxe_mapping
       delegate_to: localhost
 
@@ -130,6 +135,14 @@
     - name: End play if not slurm nodes in pxe_mapping
       ansible.builtin.meta: end_play
       when: slurm_host_group_map | default({}) | length == 0
+
+    - name: Get the backup directory
+      ansible.builtin.set_fact:
+        openchami_work_dir: >-
+          {{
+            rollback_manifest.backup_dir
+            | replace('/opt', hostvars['localhost']['oim_shared_path'])
+          }}/openchami/openchami_data/openchami/workdir
 
     - name: SLURM ROLLBACK WARNING
       ansible.builtin.debug:
@@ -165,6 +178,7 @@
             ci_defaults_file_path: "{{ openchami_work_dir }}/cloud-init/ci-defaults.yaml"
             ci_common_file_path: "{{ openchami_work_dir }}/cloud-init/ci-group-common.yaml"
             hostname_file_path: "{{ openchami_work_dir }}/nodes/hostname.yaml"
+            update_cloud_init: true
             update_ci_defaults: true
             update_ci_common: true
             update_hostname: true
@@ -245,6 +259,8 @@
     - name: Update SSH state
       ansible.builtin.set_fact:
         node_status: "{{ node_status | combine({'ssh': (ssh_result is succeeded)}) }}"
+
+    # TODO: check if cloud-init status ??
 
     # ---- CHECK SLURM ----
     - name: Check slurm services
