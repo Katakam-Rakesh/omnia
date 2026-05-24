@@ -62,6 +62,8 @@ vault_key_permission: "0644"
 ps_isipath: "{{ csi_powerscale_values_file['isiPath'] }}"
 ps_access_zone: "{{ csi_powerscale_values_file['isiAccessZone'] }}"
 ps_azserviceip: "{{ clusters.isilonClusters[0].endpoint | regex_replace('https?://', '') | regex_replace('/.*', '') }}"
+helm_charts_git: "helm-charts.tar.gz"
+external_snapshotter_git: "external-snapshotter.tar.gz"
 
 nfs_export_help_msg: |
   Failed to create required subdirectories at '{{ k8s_client_mount_path }}'.
