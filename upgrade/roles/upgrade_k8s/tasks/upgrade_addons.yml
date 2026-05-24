@@ -159,13 +159,15 @@
         msg: "{{ msg_addon_helm_failed }}"
 
 # ── PowerScale CSI Driver upgrade (ABORT on failure) ──────────────
-- name: Starting PowerScale CSI Driver upgrade
-  ansible.builtin.debug:
-    msg: "Starting PowerScale CSI Driver upgrade from {{ powerscale_from_version | default('unknown') }} to {{ powerscale_target_version }}..."
-  when:
-    - powerscale_from_version is defined
-    - powerscale_from_version != ''
-    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'completed'
+- name: Skip PowerScale upgrade if not installed
+  ansible.builtin.include_tasks: update_addon_step.yml
+  vars:
+    addon_name: powerscale
+    addon_status_update:
+      status: skipped
+      reason: not_installed
+      timestamp: "{{ ansible_date_time.iso8601 }}"
+  when: (upgrade_status.addon_upgrade.powerscale.status | default('pending')) == 'not_installed'
 
 - name: Mark PowerScale in_progress
   ansible.builtin.include_tasks: update_addon_step.yml
@@ -176,15 +178,15 @@
       from_version: "{{ powerscale_from_version | default('unknown') }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
   when:
-    - powerscale_from_version is defined
-    - powerscale_from_version != ''
     - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'completed'
+    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'not_installed'
+    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'skipped'
 
 - name: Upgrade PowerScale CSI Driver
   when:
-    - powerscale_from_version is defined
-    - powerscale_from_version != ''
     - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'completed'
+    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'not_installed'
+    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'skipped'
   block:
     - name: Execute PowerScale pre-upgrade validation
       ansible.builtin.include_tasks: powerscale_preupgrade_validation.yml

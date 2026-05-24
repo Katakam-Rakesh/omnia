@@ -119,6 +119,92 @@
         else 'pending'
       }}
 
+- name: Construct PowerScale packages file path (input_project_dir already includes project name)
+  ansible.builtin.set_fact:
+    csi_powerscale_packages_file_with_project: "{{ input_project_dir }}/config/x86_64/rhel/{{ cluster_os_version }}/csi_driver_powerscale.json"
+
+- name: Extract PowerScale target version from csi_driver_powerscale.json
+  ansible.builtin.set_fact:
+    csi_powerscale_packages_json: "{{ lookup('file', csi_powerscale_packages_file_with_project) | from_json }}"
+  delegate_to: localhost
+  when:
+    - csi_powerscale_packages_file_with_project is defined
+    - csi_powerscale_packages_file_with_project | default('') != ''
+  failed_when: false
+  register: powerscale_json_load
+
+- name: Extract PowerScale versioned directory name from JSON
+  ansible.builtin.set_fact:
+    csi_powerscale_dir: "{{ csi_powerscale_packages_json['csi_driver_powerscale']['cluster'] | selectattr('type', 'equalto', 'git') | selectattr('package', 'search', 'csi-powerscale') | map(attribute='package') | first }}"
+  delegate_to: localhost
+  when:
+    - powerscale_json_load is succeeded
+    - csi_powerscale_packages_json is defined
+
+- name: Extract PowerScale target version from directory name
+  ansible.builtin.set_fact:
+    powerscale_target_version: "{{ csi_powerscale_dir | regex_replace('^csi-powerscale-', '') }}"
+  when:
+    - powerscale_json_load is succeeded
+    - csi_powerscale_dir is defined
+    - csi_powerscale_dir != ''
+
+- name: Set default target version if JSON load failed
+  ansible.builtin.set_fact:
+    powerscale_target_version: "unknown"
+  when: powerscale_json_load is failed
+
+- name: Detect current PowerScale CSI Driver version
+  delegate_to: "{{ kube_vip }}"
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      kubectl get pods -n isilon -l app=isilon-controller
+      -o jsonpath='{.items[0].spec.containers[?(@.name=="driver")].image}' 2>/dev/null |
+      grep -oP 'v\d+\.\d+\.\d+' || echo "unknown"
+    args:
+      executable: /bin/bash
+  register: powerscale_current_version_raw
+  changed_when: false
+  failed_when: false
+
+- name: Set powerscale_current_version fact
+  ansible.builtin.set_fact:
+    powerscale_current_version: >-
+      {{ powerscale_current_version_raw.stdout | trim | regex_replace('^v', '')
+      if powerscale_current_version_raw.stdout is defined and powerscale_current_version_raw.stdout != 'unknown'
+      else 'unknown' }}
+
+- name: Set powerscale_from_version fact (preserve existing if set)
+  ansible.builtin.set_fact:
+    powerscale_from_version: >-
+      {{ upgrade_status.addon_upgrade.powerscale.from_version
+         if (upgrade_status.addon_upgrade.powerscale.from_version | default('unknown')) not in ['unknown', '']
+         else powerscale_current_version }}
+
+- name: Determine PowerScale status
+  ansible.builtin.set_fact:
+    powerscale_status: >-
+      {{
+        'completed' if powerscale_current_version == powerscale_target_version
+        else 'pending'
+      }}
+  when:
+    - powerscale_current_version != 'unknown'
+    - powerscale_target_version != 'unknown'
+
+- name: Set PowerScale status to not_installed if not detected
+  ansible.builtin.set_fact:
+    powerscale_status: not_installed
+  when: powerscale_current_version == 'unknown'
+
+- name: Set PowerScale status to skipped if target version unknown
+  ansible.builtin.set_fact:
+    powerscale_status: skipped
+  when:
+    - powerscale_current_version != 'unknown'
+    - powerscale_target_version == 'unknown'
+
 - name: Update addon status with detected versions
   ansible.builtin.include_tasks: update_node_step.yml
   vars:
@@ -139,13 +225,8 @@
           current_version: "{{ helm_current_version }}"
           from_version: "{{ helm_from_version }}"
           target_version: "{{ helm_target_version }}"
-
-- name: Display detected addon versions
-  ansible.builtin.debug:
-    msg: "{{ addon_versions_banner }}"
-  vars:
-    addon_versions_banner:
-      - "Detected addon versions:"
-      - "  Calico: {{ calico_current_version }} (target: {{ calico_target_version }}) - {{ calico_status }}"
-      - "  MetalLB: {{ metallb_current_version }} (target: {{ metallb_target_version }}) - {{ metallb_status }}"
-      - "  Helm: {{ helm_current_version }} (target: {{ helm_target_version }}) - {{ helm_status }}"
+        powerscale:
+          status: "{{ powerscale_status | default('pending') }}"
+          current_version: "{{ powerscale_current_version | default('unknown') }}"
+          from_version: "{{ powerscale_from_version | default('unknown') }}"
+          target_version: "{{ powerscale_target_version | default('unknown') }}"

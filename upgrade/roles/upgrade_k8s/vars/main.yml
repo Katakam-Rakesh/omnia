@@ -308,7 +308,7 @@ powerscale_repo_name: "csi-powerscale"
 # powerscale_nfs_repo_dir: "{{ powerscale_nfs_version_dir }}/{{ powerscale_repo_name }}"
 
 # Cluster local paths (for upgrade execution)
-powerscale_cluster_base: "/opt/omnia/csi-driver-powerscale"
+powerscale_cluster_base: "/opt/omnia"
 # powerscale_cluster_version_dir: "{{ powerscale_cluster_base }}/{{ powerscale_target_version }}"
 # powerscale_cluster_repo_dir: "{{ powerscale_cluster_version_dir }}/{{ powerscale_repo_name }}"
 # powerscale_csi_install_script: "{{ powerscale_cluster_repo_dir }}/dell-csi-helm-installer/csi-install.sh"
