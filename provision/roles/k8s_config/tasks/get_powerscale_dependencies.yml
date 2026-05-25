@@ -25,7 +25,7 @@
 
     - name: Extract versioned directory names from JSON (these are used as-is for directories)
       ansible.builtin.set_fact:
-        csi_powerscale_dir: "{{ csi_powerscale_packages_json['csi_driver_powerscale']['cluster'] | selectattr('type', 'equalto', 'git') | selectattr('package', 'search', 'csi-powerscale') | map(attribute='package') | first }}"
+        csi_powerscale_dir: "{{ csi_powerscale_packages_json['csi_driver_powerscale']['cluster'] | selectattr('type', 'equalto', 'git') | selectattr('package', 'search', 'csi-powerscale') | map(attribute='package') | first }}" # noqa: yaml[line-length]
       delegate_to: localhost
 
     - name: Display extracted PowerScale versioned directory names
