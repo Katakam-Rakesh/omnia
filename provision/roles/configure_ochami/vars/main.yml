@@ -124,9 +124,11 @@ cloud_init_failed_msg: |
   cloud-init-server is not running after {{ service_retries }} retries.
   Next steps:
   1. Check service status: systemctl status cloud-init-server
-  2. View logs: journalctl -u cloud-init-server -n 50
-  3. Restart service: systemctl restart cloud-init-server
-  4. Rerun provision.yml: ansible-playbook provision/provision.yml
+  2. Check if openchami.target dependencies are satisfied: systemctl list-dependencies openchami.target
+  3. If certificate expired issues occur, restart acme-deploy service: systemctl restart acme-deploy
+  4. Wait for openchami.target and all its dependencies to be active
+  5. Restart service: systemctl restart cloud-init-server
+  6. Rerun provision.yml: ansible-playbook provision/provision.yml
 
 openchami_target_failed_msg: |
   openchami.target is not up after {{ service_retries }} retries.
