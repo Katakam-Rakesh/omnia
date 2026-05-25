@@ -833,6 +833,10 @@ PYEOF
             systemctl restart nfs-client.target
             systemctl restart rpcbind
 
+{% if telemetry_enabled %}
+            echo "Applying Telemetry Kubernetes deployments"
+            {{ k8s_client_mount_path }}/telemetry/telemetry.sh
+{% endif %}
 
             echo "Rollout and Restart coredns"
             kubectl rollout restart deployment coredns -n kube-system
@@ -855,12 +859,6 @@ PYEOF
             kubectl get nodes -o wide || echo "Cluster not yet fully up"
             kubectl get pods --all-namespaces -o wide || echo "Pods may not be ready yet"
 
-
-{% if telemetry_enabled %}
-            echo "Applying Telemetry Kubernetes deployments"
-            {{ k8s_client_mount_path }}/telemetry/telemetry.sh
-{% endif %}
-            
             echo "Rollout and Restart coredns"
             kubectl rollout restart deployment coredns -n kube-system
             echo "Waiting for coredns pods to appear.."
