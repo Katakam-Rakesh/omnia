@@ -159,6 +159,23 @@
         msg: "{{ msg_addon_helm_failed }}"
 
 # ── PowerScale CSI Driver upgrade (ABORT on failure) ──────────────
+
+- name: Skip PowerScale upgrade if not installed
+  ansible.builtin.debug:
+    msg: |
+      ═══════════════════════════════════════════════════════════════════════════
+      WARNING: PowerScale CSI Driver NOT INSTALLED
+      ═══════════════════════════════════════════════════════════════════════════
+
+      PowerScale CSI Driver was not installed in the previous Omnia version.
+      The upgrade playbook will NOT install PowerScale CSI Driver.
+      Proceeding with Kubernetes upgrade only.
+
+      If you want to install PowerScale CSI Driver, run the provision playbook
+      after the upgrade completes.
+      ═══════════════════════════════════════════════════════════════════════════
+  when: (upgrade_status.addon_upgrade.powerscale.status | default('pending')) == 'not_installed'
+
 - name: Skip PowerScale upgrade if not installed
   ansible.builtin.include_tasks: update_addon_step.yml
   vars:
@@ -169,6 +186,11 @@
       timestamp: "{{ ansible_date_time.iso8601 }}"
   when: (upgrade_status.addon_upgrade.powerscale.status | default('pending')) == 'not_installed'
 
+- name: Starting PowerScale upgrade
+  ansible.builtin.debug:
+    msg: "Starting PowerScale addon upgrade from {{ powerscale_from_version | default('unknown') }} to {{ powerscale_target_version }}..."
+  when: (upgrade_status.addon_upgrade.powerscale.status | default('pending')) not in ['completed', 'not_installed', 'skipped']
+
 - name: Mark PowerScale in_progress
   ansible.builtin.include_tasks: update_addon_step.yml
   vars:
@@ -177,31 +199,19 @@
       status: in_progress
       from_version: "{{ powerscale_from_version | default('unknown') }}"
       timestamp: "{{ ansible_date_time.iso8601 }}"
-  when:
-    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'completed'
-    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'not_installed'
-    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'skipped'
+  when: (upgrade_status.addon_upgrade.powerscale.status | default('pending')) not in ['completed', 'not_installed', 'skipped']
 
 - name: Upgrade PowerScale CSI Driver
-  when:
-    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'completed'
-    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'not_installed'
-    - (upgrade_status.addon_upgrade.powerscale.status | default('pending')) != 'skipped'
+  when: (upgrade_status.addon_upgrade.powerscale.status | default('pending')) not in ['completed', 'not_installed', 'skipped']
   block:
     - name: Execute PowerScale pre-upgrade validation
-      ansible.builtin.include_tasks: powerscale_preupgrade_validation.yml
-
-    - name: Execute PowerScale backup
-      ansible.builtin.include_tasks: powerscale_backup.yml
-
-    - name: Execute PowerScale upgrade environment preparation
       ansible.builtin.include_tasks: powerscale_prepare_upgrade.yml
 
-    - name: Execute PowerScale upgrade
-      ansible.builtin.include_tasks: powerscale_execute_upgrade.yml
+    - name: Execute PowerScale backup
+      ansible.builtin.include_tasks: powerscale_backup_folder.yml
 
-    - name: Execute PowerScale post-upgrade validation
-      ansible.builtin.include_tasks: powerscale_postupgrade_validation.yml
+    - name: Execute PowerScale upgrade
+      ansible.builtin.include_tasks: upgrade_powerscale.yml
 
     - name: Mark PowerScale completed
       ansible.builtin.include_tasks: update_addon_step.yml
@@ -225,6 +235,7 @@
     - name: ABORT — PowerScale upgrade failed
       ansible.builtin.fail:
         msg: "{{ msg_addon_powerscale_failed }}"
+
 
 # ── Run addon validation ──────────────────────────────────────────
 - name: Validate addons

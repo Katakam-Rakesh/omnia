@@ -119,91 +119,66 @@
         else 'pending'
       }}
 
-- name: Construct PowerScale packages file path (input_project_dir already includes project name)
-  ansible.builtin.set_fact:
-    csi_powerscale_packages_file_with_project: "{{ input_project_dir }}/config/x86_64/rhel/{{ cluster_os_version }}/csi_driver_powerscale.json"
+- name: Detect PowerScale CSI Driver versions
+  block:
+    - name: Load PowerScale target version from JSON
+      ansible.builtin.set_fact:
+        csi_powerscale_packages_json: "{{ lookup('file', input_project_dir + '/config/x86_64/rhel/' + cluster_os_version + '/csi_driver_powerscale.json') | from_json }}"
+      delegate_to: localhost
+      failed_when: false
+      register: powerscale_json_load
 
-- name: Extract PowerScale target version from csi_driver_powerscale.json
-  ansible.builtin.set_fact:
-    csi_powerscale_packages_json: "{{ lookup('file', csi_powerscale_packages_file_with_project) | from_json }}"
-  delegate_to: localhost
-  when:
-    - csi_powerscale_packages_file_with_project is defined
-    - csi_powerscale_packages_file_with_project | default('') != ''
-  failed_when: false
-  register: powerscale_json_load
+    - name: Extract PowerScale target version and directory name
+      ansible.builtin.set_fact:
+        csi_powerscale_dir: >-
+          {{ csi_powerscale_packages_json['csi_driver_powerscale']['cluster']
+             | selectattr('type', 'equalto', 'git')
+             | selectattr('package', 'search', 'csi-powerscale')
+             | map(attribute='package')
+             | first
+             if powerscale_json_load is succeeded
+             else 'unknown' }}
+        powerscale_target_version: >-
+          {{ csi_powerscale_packages_json['csi_driver_powerscale']['cluster']
+             | selectattr('type', 'equalto', 'git')
+             | selectattr('package', 'search', 'csi-powerscale')
+             | map(attribute='package')
+             | first
+             | regex_replace('^csi-powerscale-', '')
+             if powerscale_json_load is succeeded
+             else 'unknown' }}
 
-- name: Extract PowerScale versioned directory name from JSON
-  ansible.builtin.set_fact:
-    csi_powerscale_dir: "{{ csi_powerscale_packages_json['csi_driver_powerscale']['cluster'] | selectattr('type', 'equalto', 'git') | selectattr('package', 'search', 'csi-powerscale') | map(attribute='package') | first }}"
-  delegate_to: localhost
-  when:
-    - powerscale_json_load is succeeded
-    - csi_powerscale_packages_json is defined
+    - name: Detect current PowerScale CSI Driver version
+      delegate_to: "{{ kube_vip }}"
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail &&
+          kubectl get pods -n isilon -l app=isilon-controller
+          -o jsonpath='{.items[0].spec.containers[?(@.name=="driver")].image}' 2>/dev/null |
+          grep -oP 'v\d+\.\d+\.\d+' || echo "unknown"
+        args:
+          executable: /bin/bash
+      register: powerscale_current_version_raw
+      changed_when: false
+      failed_when: false
 
-- name: Extract PowerScale target version from directory name
-  ansible.builtin.set_fact:
-    powerscale_target_version: "{{ csi_powerscale_dir | regex_replace('^csi-powerscale-', '') }}"
-  when:
-    - powerscale_json_load is succeeded
-    - csi_powerscale_dir is defined
-    - csi_powerscale_dir != ''
-
-- name: Set default target version if JSON load failed
-  ansible.builtin.set_fact:
-    powerscale_target_version: "unknown"
-  when: powerscale_json_load is failed
-
-- name: Detect current PowerScale CSI Driver version
-  delegate_to: "{{ kube_vip }}"
-  ansible.builtin.shell:
-    cmd: >-
-      set -o pipefail &&
-      kubectl get pods -n isilon -l app=isilon-controller
-      -o jsonpath='{.items[0].spec.containers[?(@.name=="driver")].image}' 2>/dev/null |
-      grep -oP 'v\d+\.\d+\.\d+' || echo "unknown"
-    args:
-      executable: /bin/bash
-  register: powerscale_current_version_raw
-  changed_when: false
-  failed_when: false
-
-- name: Set powerscale_current_version fact
-  ansible.builtin.set_fact:
-    powerscale_current_version: >-
-      {{ powerscale_current_version_raw.stdout | trim | regex_replace('^v', '')
-      if powerscale_current_version_raw.stdout is defined and powerscale_current_version_raw.stdout != 'unknown'
-      else 'unknown' }}
-
-- name: Set powerscale_from_version fact (preserve existing if set)
-  ansible.builtin.set_fact:
-    powerscale_from_version: >-
-      {{ upgrade_status.addon_upgrade.powerscale.from_version
-         if (upgrade_status.addon_upgrade.powerscale.from_version | default('unknown')) not in ['unknown', '']
-         else powerscale_current_version }}
-
-- name: Determine PowerScale status
-  ansible.builtin.set_fact:
-    powerscale_status: >-
-      {{
-        'completed' if powerscale_current_version == powerscale_target_version
-        else 'pending'
-      }}
-  when:
-    - powerscale_current_version != 'unknown'
-    - powerscale_target_version != 'unknown'
-
-- name: Set PowerScale status to not_installed if not detected
-  ansible.builtin.set_fact:
-    powerscale_status: not_installed
-  when: powerscale_current_version == 'unknown'
-
-- name: Set PowerScale status to skipped if target version unknown
-  ansible.builtin.set_fact:
-    powerscale_status: skipped
-  when:
-    - powerscale_current_version != 'unknown'
-    - powerscale_target_version == 'unknown'
+    - name: Set PowerScale version facts and determine status
+      ansible.builtin.set_fact:
+        powerscale_current_version: >-
+          {{ powerscale_current_version_raw.stdout | trim | regex_replace('^v', '')
+             if powerscale_current_version_raw.stdout is defined and powerscale_current_version_raw.stdout != 'unknown'
+             else 'unknown' }}
+        powerscale_from_version: >-
+          {{ upgrade_status.addon_upgrade.powerscale.from_version
+             if (upgrade_status.addon_upgrade.powerscale.from_version | default('unknown')) not in ['unknown', '']
+             else (powerscale_current_version_raw.stdout | trim | regex_replace('^v', '')
+                 if powerscale_current_version_raw.stdout is defined and powerscale_current_version_raw.stdout != 'unknown'
+                 else 'unknown') }}
+        powerscale_status: >-
+          {{ 'not_installed' if powerscale_current_version == 'unknown'
+             else 'skipped' if powerscale_target_version == 'unknown'
+             else 'completed' if powerscale_current_version == powerscale_target_version
+             else 'pending' }}
 
 - name: Update addon status with detected versions
   ansible.builtin.include_tasks: update_node_step.yml
