@@ -974,7 +974,7 @@ PYEOF
                   fi
                 fi
 
-                FILE="/opt/omnia/{{ csi_powerscale_dir }}/values.yaml"
+                FILE="/opt/omnia/{{ csi_powerscale_dir }}/values.yaml"   # <-- update with actual path
 
                 echo "Updating arrayConnectivityPollRate in: $FILE"
 
@@ -1080,10 +1080,6 @@ PYEOF
             fi
             systemctl restart nfs-client.target
             systemctl restart rpcbind
-
-{% if powerscale_metrics_enabled | default(false) | bool %}
-{% include 'powerscale/deploy_powerscale_telemetry.sh.j2' %}
-{% endif %}
 
 {% if telemetry_enabled %}
             echo "Applying Telemetry Kubernetes deployments"
