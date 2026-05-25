@@ -32,7 +32,7 @@
       ansible.builtin.debug:
         msg:
           - "csi_powerscale_dir: {{ csi_powerscale_dir }}"
-  
+
     - name: Base64 encode username and password
       ansible.builtin.set_fact:
         csi_username_b64: "{{ hostvars['localhost']['csi_username'] | b64encode }}"
