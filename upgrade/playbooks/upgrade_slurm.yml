@@ -362,40 +362,38 @@
             seconds: 5
           vars:
             failure_report: |
-              ╔════════════════════════════════════════════════════════════════╗
-              ║          SLURM REBOOT VALIDATION REPORT                        ║
-              ╚════════════════════════════════════════════════════════════════╝
+              ================================================================
+              SLURM CLUSTER STATUS SUMMARY
+              ================================================================
 
-              📊 CLUSTER STATUS SUMMARY
-              ─────────────────────────────────────────────────────────────────
               Total Nodes: {{ slurm_nodes | length }}
               Successful booted slurm nodes: {{ filtered_nodes | length }}
               {% if unreachable_nodes | length > 0 %}
 
-              ❌ UNREACHABLE NODES ({{ unreachable_nodes | length }})
+              -> UNREACHABLE NODES ({{ unreachable_nodes | length }})
               ─────────────────────────────────────────────────────────────────
               {{ unreachable_nodes | map(attribute='hostname') | join(', ') }}
               {% endif %}
               {% if reboot_nodes | length > 0 %}
 
-              🔁 REBOOT FAILED NODES ({{ reboot_nodes | length }})
+              -> REBOOT FAILED NODES ({{ reboot_nodes | length }})
               ─────────────────────────────────────────────────────────────────
               {{ reboot_nodes | map(attribute='hostname') | join(', ') }}
               {% endif %}
               {% if ssh_nodes | length > 0 %}
 
-              🔐 SSH FAILURES ({{ ssh_nodes | length }})
+              -> SSH FAILURES ({{ ssh_nodes | length }})
               ─────────────────────────────────────────────────────────────────
               {{ ssh_nodes | map(attribute='hostname') | join(', ') }}
               {% endif %}
               {% if sinfo_nodes | length > 0 %}
 
-              🧠 SINFO FAILURES ({{ sinfo_nodes | length }})
+              -> SINFO FAILURES ({{ sinfo_nodes | length }})
               ─────────────────────────────────────────────────────────────────
               {{ sinfo_nodes | map(attribute='hostname') | join(', ') }}
               {% endif %}
 
-              📋 NEXT STEPS
+              -> NEXT STEPS
               ─────────────────────────────────────────────────────────────────
               {% if unreachable_nodes | length > 0 %}
               UNREACHABLE NODES:
@@ -434,13 +432,13 @@
     - name: Generate and display success report
       ansible.builtin.debug:
         msg: |
-          ════════════════════════════════════════════════════════════════════════
+          =======================================================================
           [UPGRADE] SLURM UPGRADE — ALL NODES VERIFIED SUCCESSFULLY
-          ════════════════════════════════════════════════════════════════════════
+          =======================================================================
           Verified: {{ success_nodes | length }} / {{ slurm_nodes | length }} nodes
             Reboot complete | SSH active | Slurm (sinfo) responding on all nodes.
           Cluster is ready for workload submission.
-          ════════════════════════════════════════════════════════════════════════
+          =======================================================================
       when: not slurm_upgrade_failed
 
     - name: Include omnia_config
