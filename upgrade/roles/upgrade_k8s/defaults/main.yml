@@ -30,6 +30,3 @@ minio_bucket: "omnia"
 
 # Worker drain options
 worker_drain_delete_emptydir: true
-
-# PowerScale CSI Driver configuration
-# Note: input_project_dir is set by upgrade_k8s.yml to include project name (e.g., /opt/omnia/input/project_default)

@@ -222,65 +222,17 @@ msg_rollback_etcd_binary_failed: >-
 # ---------------------------------------------------------------------------
 # PowerScale CSI Driver Upgrade Messages
 # ---------------------------------------------------------------------------
-msg_powerscale_namespace_missing: >-
-  PowerScale CSI driver namespace 'isilon' not found. PowerScale CSI driver
-  does not appear to be installed. Upgrade cannot proceed.
-msg_powerscale_helm_release_missing: >-
-  PowerScale Helm release not found in namespace 'isilon'. Expected release
-  name: isilon, csi-isilon, powerscale, or csi-powerscale. Verify PowerScale
-  CSI driver is installed before attempting upgrade.
-msg_powerscale_controller_pods_missing: >-
-  PowerScale controller pods not found in namespace 'isilon'. PowerScale CSI
-  driver does not appear to be running correctly. Verify installation before
-  attempting upgrade.
-msg_powerscale_node_daemonset_missing: >-
-  PowerScale node daemonset not found in namespace 'isilon'. PowerScale CSI
-  driver does not appear to be running correctly. Verify installation before
-  attempting upgrade.
-msg_powerscale_values_missing: >-
-  PowerScale values.yaml file not found at {{ input_project_dir }}/values.yaml.
-  Input file transformation may have failed. Run prepare_upgrade.yml to
-  regenerate input files.
-msg_powerscale_secret_missing: >-
-  PowerScale secret.yaml file not found at {{ input_project_dir }}/secret.yaml.
-  Input file transformation may have failed. Run prepare_upgrade.yml to
-  regenerate input files.
-msg_addon_powerscale_failed: >-
-  PowerScale CSI driver upgrade failed. Check logs for details. The upgrade
-  process has been aborted to prevent cluster instability.
-msg_powerscale_backup_failed: >-
-  PowerScale CSI driver backup failed. Cannot proceed with upgrade without
-  a valid backup for rollback capability. Check backup directory permissions
-  and available disk space.
-msg_powerscale_backup_summary: |
-  PowerScale CSI driver backup completed:
-  - Backup location: {{ backup_dir }}
-  - Helm release: {{ powerscale_release_name }}
-  - Driver version: {{ powerscale_current_driver_version }}
-  - Backup files: Helm values, manifest, secrets, storage classes
-  - Conditional backups: PVs, PVCs, VolumeSnapshots (if exist)
-msg_powerscale_prepare_failed: >-
-  PowerScale CSI driver upgrade environment preparation failed. Cannot proceed
-  with upgrade. Check that NFS mount is accessible and git is installed.
-msg_powerscale_git_clone_failed: >-
-  Failed to clone PowerScale CSI driver repository from GitHub. Check network
-  connectivity and repository URL. Repository: {{ powerscale_repo_url }}
-msg_powerscale_git_checkout_failed: >-
-  Failed to checkout PowerScale CSI driver version {{ powerscale_target_version }}.
-  Verify that the version tag exists in the repository.
+msg_powerscale_namespace_missing: "PowerScale namespace 'isilon' does not exist. Cannot proceed with upgrade."
+msg_powerscale_controller_pods_missing: "PowerScale controller pods not found. Cannot proceed with upgrade."
+msg_powerscale_node_daemonset_missing: "PowerScale node daemonset not found. Cannot proceed with upgrade."
 msg_powerscale_copy_failed: >-
   Failed to copy PowerScale CSI driver repository from NFS to cluster local
   directory. Check disk space and permissions.
-msg_powerscale_config_copy_failed: >-
-  Failed to copy PowerScale configuration files from {{ input_project_dir }} to
-  upgrade directory. Verify Phase 1 completed successfully.
-msg_powerscale_prepare_summary: |
-  PowerScale CSI driver upgrade environment prepared:
-  - Target version: {{ powerscale_target_version }}
-  - NFS version directory: {{ powerscale_nfs_version_dir }}
-  - Cluster version directory: {{ powerscale_cluster_version_dir }}
-  - Upgrade script: {{ powerscale_csi_install_script }}
-  - Ready for upgrade execution
+msg_powerscale_nfs_dir_missing: >-
+  PowerScale CSI driver versioned directory not found on NFS: {{ powerscale_nfs_version_dir }}
+  This directory should have been created during the provision phase.
+  Upgrade cannot proceed. Please run the provision playbook to create the directory.
+msg_powerscale_file_missing: "{{ item.item.name }} not found at {{ item.item.path }}. Ensure provision phase completed successfully."
 msg_powerscale_paths_display: |
   PowerScale upgrade environment preparation:
   - NFS version directory: {{ powerscale_nfs_version_dir }}
@@ -293,26 +245,13 @@ msg_powerscale_version_source: >-
   {% else %}
   will be cloned from GitHub ({{ powerscale_repo_url }})
   {% endif %}
-msg_powerscale_version_verified: "Version verified: values.yaml contains correct version {{ powerscale_values_version }}"
-msg_powerscale_namespace_missing: "PowerScale namespace 'isilon' does not exist. Cannot proceed with upgrade."
-msg_powerscale_controller_pods_missing: "PowerScale controller pods not found. Cannot proceed with upgrade."
-msg_powerscale_node_daemonset_missing: "PowerScale node daemonset not found. Cannot proceed with upgrade."
-msg_powerscale_nfs_dir_missing: >-
-  PowerScale CSI driver versioned directory not found on NFS: {{ powerscale_nfs_version_dir }}
-  This directory should have been created during the provision phase.
-  Upgrade cannot proceed. Please run the provision playbook to create the directory.
-msg_powerscale_file_missing: "{{ item.item.name }} not found at {{ item.item.path }}. Ensure provision phase completed successfully."
-msg_powerscale_version_mismatch: "Version mismatch: values.yaml contains version {{ powerscale_values_version }}, but target version is {{ powerscale_target_version }}"
-msg_powerscale_upgrade_failed: >-
-  PowerScale CSI driver upgrade failed. Check upgrade logs at
-  /tmp/powerscale_upgrade_{{ powerscale_target_version }}.log on {{ kube_vip }}.
-  Review errors and consider rollback if necessary.
-msg_powerscale_controller_not_ready: >-
-  PowerScale controller pods did not become ready within the timeout period.
-  Check pod status with: kubectl get pods -n {{ powerscale_namespace }} -l app=isilon-controller
-msg_powerscale_node_not_ready: >-
-  PowerScale node daemonset did not become ready within the timeout period.
-  Check daemonset status with: kubectl get daemonset isilon-node -n {{ powerscale_namespace }}
+msg_powerscale_prepare_summary: |
+  PowerScale CSI driver upgrade environment prepared:
+  - Target version: {{ powerscale_target_version }}
+  - NFS version directory: {{ powerscale_nfs_version_dir }}
+  - Cluster version directory: {{ powerscale_cluster_version_dir }}
+  - Upgrade script: {{ powerscale_csi_install_script }}
+  - Ready for upgrade execution
 msg_powerscale_backup_summary: |
   PowerScale CSI driver backup completed:
   - Backup location: {{ backup_dir }}/csi
@@ -320,52 +259,23 @@ msg_powerscale_backup_summary: |
   - StorageClass: storageclass-backup.yml
   - PVCs: Backed up if using PowerScale StorageClass
 msg_powerscale_upgrade_start: "Starting PowerScale CSI driver upgrade to version {{ powerscale_target_version }}"
+msg_powerscale_upgrade_failed: >-
+  PowerScale CSI driver upgrade failed. Check upgrade logs at
+  /tmp/powerscale_upgrade_{{ powerscale_target_version }}.log on {{ kube_vip }}.
+  Review errors and consider rollback if necessary.
 msg_powerscale_upgrade_success: "PowerScale CSI driver upgrade command completed successfully"
-msg_powerscale_upgrade_complete: |
-  PowerScale CSI driver upgrade completed successfully:
-  - Controller pods: Ready
-  - Node daemonset: Ready
-  - StorageClasses: Verified
-  - PVCs: Verified
-msg_powerscale_helm_not_deployed: >-
-  PowerScale Helm release is not in deployed state after upgrade.
-  Status: {{ powerscale_helm_release.status }}. Check Helm release with:
-  helm list -n {{ powerscale_namespace }}
-msg_powerscale_version_mismatch: >-
-  PowerScale driver version does not match target version.
-  Expected: {{ powerscale_target_version }}, Actual: {{ powerscale_actual_version.stdout }}.
-  Verify upgrade completed successfully.
 msg_powerscale_no_storageclasses: >-
   No PowerScale StorageClasses found after upgrade. StorageClasses may have been
   deleted during upgrade. Check with: kubectl get storageclass
+msg_addon_powerscale_failed: >-
+  PowerScale CSI driver upgrade failed. Check logs for details. The upgrade
+  process has been aborted to prevent cluster instability.
 
 # ---------------------------------------------------------------------------
 # PowerScale CSI Driver Upgrade Paths
 # ---------------------------------------------------------------------------
-# NOTE: These paths use k8s_client_mount_path which is set dynamically
-# PowerScale repository information
-powerscale_repo_url: "https://github.com/dell/csi-powerscale.git"
-powerscale_repo_name: "csi-powerscale"
-
-# NFS mount paths (persistent storage)
-# powerscale_nfs_base: "{{ k8s_client_mount_path }}/csi-driver-powerscale"
-# powerscale_nfs_version_dir: "{{ powerscale_nfs_base }}/{{ powerscale_target_version }}"
-# powerscale_nfs_repo_dir: "{{ powerscale_nfs_version_dir }}/{{ powerscale_repo_name }}"
-
 # Cluster local paths (for upgrade execution)
 powerscale_cluster_base: "/opt/omnia"
-# powerscale_cluster_version_dir: "{{ powerscale_cluster_base }}/{{ powerscale_target_version }}"
-# powerscale_cluster_repo_dir: "{{ powerscale_cluster_version_dir }}/{{ powerscale_repo_name }}"
-# powerscale_csi_install_script: "{{ powerscale_cluster_repo_dir }}/dell-csi-helm-installer/csi-install.sh"
 
-# Configuration files (staged for upgrade)
-# powerscale_cluster_values_file: "{{ powerscale_cluster_version_dir }}/values.yaml"
-# powerscale_cluster_secret_file: "{{ powerscale_cluster_version_dir }}/secret.yaml"
-# powerscale_upgrade_plan_file: "{{ powerscale_cluster_version_dir }}/upgrade-plan.yaml"
-
-# Source configuration files (from Phase 1)
-powerscale_source_values_file: "{{ input_project_dir }}/values.yaml"
-powerscale_source_secret_file: "{{ input_project_dir }}/secret.yaml"
-
-# PowerScale namespace and release name
+# PowerScale namespace
 powerscale_namespace: "isilon"
