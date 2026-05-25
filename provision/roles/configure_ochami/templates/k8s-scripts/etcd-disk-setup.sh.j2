@@ -1,412 +1,172 @@
 #!/bin/bash
-{% raw %}
-# ==============================================================================
-# SCRIPT NAME : etcd-disk-setup.sh
-# LOCATION    : /usr/local/bin/etcd-disk-setup.sh (rendered from .j2 template)
-# PURPOSE     : First-boot provisioning of a local disk (BOSS card preferred,
-#               or fallback to other disks) for the etcd data directory.
-#
-# OPERATIONS  : 1. Discover all disks (BOSS detection by PCI subsystem + model)
-#               2. Select disk by index (BOSS first, fallback to OTHER)
-#               3. Flush multipath/dm, wipe signatures + zap partition tables
-#               4. Create a single GPT partition (full disk, Linux FS type)
-#               5. Format as ext4 with label
-#               6. Add UUID-based fstab entry (idempotent — removes stale ones)
-#               7. Mount and verify
-#               8. Create etcd user/group if missing
-#               9. Apply etcd ownership (etcd:etcd) and permissions (700)
-#
-# BOSS DETECTION:
-#   - NVMe BOSS (BOSS-N1): PCI subsystem string contains "BOSS"
-#   - SATA BOSS (BOSS-S1/S2): sysfs/lsblk model or /dev/disk/by-id contains "BOSS"
-#   - No model numbers are hardcoded — only keyword "BOSS" (case-insensitive)
-#
-# WARNING     : DESTRUCTIVE — wipes all data on the selected disk.
-# SAFETY      : Uses flock to prevent concurrent execution.
-# USAGE       : etcd-disk-setup.sh [BOSS_INDEX] [OTHER_INDEX]
-#               Defaults: BOSS_INDEX=0, OTHER_INDEX=0
-# LOG FILE    : /var/log/etcd-disk-setup.log
-# ==============================================================================
-set -euo pipefail
+# etcd-fstab-update.sh
+# Wipes BOSS/fallback disk, creates ext4, mounts /var/lib/etcd
+# Every command logged with timestamp + exit code using echo only
+set -uo pipefail
 
-# ------------------------------------------------------------------------------
-# SECTION 1 — CONFIGURATION VARIABLES
-# ------------------------------------------------------------------------------
-modprobe megaraid_sas 2>/dev/null || echo "$(date +%F_%T) [WARN] megaraid_sas not loaded (may not be needed)"
-modprobe nvme 2>/dev/null || echo "$(date +%F_%T) [WARN] nvme not loaded"
-modprobe ahci 2>/dev/null || echo "$(date +%F_%T) [WARN] ahci not loaded"
-modprobe sd_mod 2>/dev/null || echo "$(date +%F_%T) [WARN] sd_mod not loaded"
-dnf install -y gdisk
-udevadm settle --timeout=30 2>/dev/null || true
-sleep 5
+MOUNT="/var/lib/etcd"
+LOG="/var/log/etcd-disk-setup.log"
+exec > >(tee -a "$LOG") 2>&1
 
-LOGFILE="/var/log/etcd-disk-setup.log"
-MOUNT_POINT="/var/lib/etcd"
-MOUNT_OPTS="defaults,noatime,nodiratime,nofail"
-FS_LABEL="etcd_data"
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-BOSS_INDEX="${1:-0}"
-OTHER_INDEX="${2:-0}"
+ts() { date +%F_%T; }
 
-# ------------------------------------------------------------------------------
-# SECTION 2 — LOGGING SETUP
-# ------------------------------------------------------------------------------
-exec > >(tee -a "$LOGFILE") 2>&1
-echo "$(date +%F_%T) [INFO] ===== etcd-disk-setup.sh START ====="
-echo "$(date +%F_%T) [INFO] BOSS_INDEX=$BOSS_INDEX OTHER_INDEX=$OTHER_INDEX"
-
-# ------------------------------------------------------------------------------
-# SECTION 3 — CONCURRENCY LOCK
-# ------------------------------------------------------------------------------
-exec 200>/var/run/etcd-disk-setup.lock
-if ! flock -n 200; then
-    echo "$(date +%F_%T) [ERROR] Another instance running" >&2
-    exit 1
-fi
-echo "$(date +%F_%T) [OK] Lock acquired"
-
-# ------------------------------------------------------------------------------
-# SECTION 4 — DISK DISCOVERY (DYNAMIC — NO HARDCODED MODELS)
-#
-# Phase 1: NVMe controllers — PCI subsystem contains "BOSS"?
-# Phase 2: SATA/SAS disks — sysfs model / lsblk model / by-id contains "BOSS"?
-# Skips: loop, CD-ROM, floppy, IDSDM
-# ------------------------------------------------------------------------------
-BOSS_DISKS=""
-OTHER_DISKS=""
-BOSS_COUNT=0
-OTHER_COUNT=0
-NVME_CLASSIFIED=""
-
-# --- Phase 1: NVMe controllers ---
-for ctrl in /sys/class/nvme/nvme*; do
-    test -d "$ctrl" || continue
-    name=$(basename "$ctrl")
-    pci=$(cat "$ctrl/address" 2>/dev/null || echo "")
-    state=$(cat "$ctrl/state" 2>/dev/null || echo "unknown")
-
-    if test -z "$pci"; then
-        echo "$(date +%F_%T) [WARN] No PCI address for $name, skipping"
-        continue
-    fi
-
-    subsys=$(lspci -D -s "$pci" -v 2>/dev/null | grep -i "Subsystem" || echo "")
-    is_boss="no"
-    echo "$subsys" | grep -qi "boss" && is_boss="yes"
-
-    ns_found=0
-    for ns in /sys/block/${name}n*; do
-        test -d "$ns" || continue
-        blkname=$(basename "$ns")
-        dev="/dev/$blkname"
-        size=$(lsblk -d -n -o SIZE "$dev" 2>/dev/null | xargs)
-        ns_found=1
-        NVME_CLASSIFIED="$NVME_CLASSIFIED $blkname"
-
-        if test "$is_boss" = "yes"; then
-            echo "$(date +%F_%T) [INFO] BOSS NVMe disk: $dev ($size) ctrl=$name pci=$pci"
-            BOSS_DISKS="$BOSS_DISKS $dev"
-            BOSS_COUNT=$((BOSS_COUNT + 1))
-        else
-            echo "$(date +%F_%T) [INFO] OTHER NVMe disk: $dev ($size) ctrl=$name pci=$pci"
-            OTHER_DISKS="$OTHER_DISKS $dev"
-            OTHER_COUNT=$((OTHER_COUNT + 1))
-        fi
-    done
-
-    if test "$ns_found" -eq 0; then
-        echo "$(date +%F_%T) [INFO] NVMe ctrl=$name pci=$pci boss=$is_boss state=$state — NO NAMESPACES"
-    fi
-done
-
-# --- Phase 2: SATA/SAS disks ---
-while read -r blkname type; do
-    test -z "$blkname" && continue
-    test "$type" != "disk" && continue
-    case "$blkname" in loop*|sr*|fd*|nvme*) continue;; esac
-
-    dev="/dev/$blkname"
-    size=$(lsblk -d -n -o SIZE "$dev" 2>/dev/null | xargs)
-    is_boss="no"
-
-    sysfs_model=$(cat /sys/block/$blkname/device/model 2>/dev/null | xargs)
-    echo "$sysfs_model" | grep -qi "boss" && is_boss="yes"
-
-    lsblk_model=$(lsblk -d -n -o MODEL "$dev" 2>/dev/null | xargs)
-    echo "$lsblk_model" | grep -qi "boss" && is_boss="yes"
-
-    if ls -l /dev/disk/by-id/ 2>/dev/null | grep "${blkname}$" | grep -qi "boss"; then
-        is_boss="yes"
-    fi
-
-    model="${sysfs_model:-$lsblk_model}"
-
-    case "$model" in
-        *IDSDM*|*idsdm*|_IDSDM_)
-            echo "$(date +%F_%T) [INFO] Skip IDSDM: $dev ($size)"
-            continue
-            ;;
-    esac
-
-    if test "$is_boss" = "yes"; then
-        echo "$(date +%F_%T) [INFO] BOSS SATA disk: $dev ($size, $model)"
-        BOSS_DISKS="$BOSS_DISKS $dev"
-        BOSS_COUNT=$((BOSS_COUNT + 1))
-    else
-        echo "$(date +%F_%T) [INFO] OTHER SATA/SAS disk: $dev ($size, $model)"
-        OTHER_DISKS="$OTHER_DISKS $dev"
-        OTHER_COUNT=$((OTHER_COUNT + 1))
-    fi
-done <<EOF
-$(lsblk -d -n -o NAME,TYPE)
-EOF
-
-BOSS_DISKS=$(echo "$BOSS_DISKS" | xargs)
-OTHER_DISKS=$(echo "$OTHER_DISKS" | xargs)
-echo "$(date +%F_%T) [INFO] BOSS($BOSS_COUNT): ${BOSS_DISKS:-none}"
-echo "$(date +%F_%T) [INFO] OTHER($OTHER_COUNT): ${OTHER_DISKS:-none}"
-
-# ------------------------------------------------------------------------------
-# SECTION 5 — DISK SELECTION
-# ------------------------------------------------------------------------------
-get_disk_by_index() {
-    local disks="$1"
-    local idx="$2"
-    echo "$disks" | tr ' ' '\n' | sed -n "$((idx + 1))p"
+run() {
+    echo "$(ts) [CMD] $*"
+    "$@"
+    local rc=$?
+    echo "$(ts) [RC=$rc] $*"
+    return $rc
 }
 
+runq() {
+    echo "$(ts) [CMD] $* (ok to fail)"
+    "$@" 2>&1 || true
+}
+
+ping_uuid() {
+    local uuid
+    uuid=$(blkid -s UUID -o value "$1" 2>/dev/null || true)
+    echo "$(ts) [UUID] $1 = ${uuid:-NOT_FOUND}"
+}
+
+dump_fstab_entry() {
+    echo "$(ts) [FSTAB] grep for $1:"
+    grep "$1" /etc/fstab || echo "$(ts) [FSTAB] no entry"
+}
+
+# ── START ─────────────────────────────────────────────────────────────────────
+
+echo ""
+echo "$(ts) [INFO] ===== START etcd-disk-setup ====="
+
+# ── Detect root disk ─────────────────────────────────────────────────────────
+
+echo "$(ts) [STEP] Detecting root disk"
+ROOT_DISK=$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" 2>/dev/null | head -1 || true)
+echo "$(ts) [INFO] Root disk: ${ROOT_DISK:-none}"
+
+# ── Scan for BOSS or fallback disk ───────────────────────────────────────────
+
+echo "$(ts) [STEP] Scanning disks"
 DISK=""
-if test "$BOSS_COUNT" -gt 0; then
-    if test "$BOSS_INDEX" -ge "$BOSS_COUNT"; then
-        echo "$(date +%F_%T) [ERROR] BOSS_INDEX=$BOSS_INDEX out of range ($BOSS_COUNT found)" >&2
-        exit 1
+for d in $(lsblk -dn -o NAME | grep -Ev "^(loop|sr|fd|${ROOT_DISK:-NONE})"); do
+    model=$(lsblk -dn -o MODEL "/dev/$d" 2>/dev/null | xargs || true)
+    pci=""
+    case "$d" in nvme*) pci=$(cat "/sys/class/nvme/${d%n*}/address" 2>/dev/null || true) ;; esac
+    sub=""
+    [ -n "$pci" ] && sub=$(lspci -D -s "$pci" -v 2>/dev/null | grep -i Subsystem || true)
+    echo "$(ts) [INFO] Disk /dev/$d model='$model' pci='$pci'"
+    if echo "$model $sub" | grep -qi boss; then
+        DISK="/dev/$d"
+        echo "$(ts) [OK] BOSS disk found: $DISK"
+        break
     fi
-    DISK=$(get_disk_by_index "$BOSS_DISKS" "$BOSS_INDEX")
-    echo "$(date +%F_%T) [OK] Selected BOSS[$BOSS_INDEX]: $DISK"
-elif test "$OTHER_COUNT" -gt 0; then
-    if test "$OTHER_INDEX" -ge "$OTHER_COUNT"; then
-        echo "$(date +%F_%T) [ERROR] OTHER_INDEX=$OTHER_INDEX out of range ($OTHER_COUNT found)" >&2
-        exit 1
-    fi
-    DISK=$(get_disk_by_index "$OTHER_DISKS" "$OTHER_INDEX")
-    echo "$(date +%F_%T) [INFO] No BOSS found, using OTHER[$OTHER_INDEX]: $DISK"
-else
-    echo "$(date +%F_%T) [ERROR] No suitable disks found" >&2
-    exit 1
-fi
+    [ -z "$DISK" ] && DISK="/dev/$d" && echo "$(ts) [INFO] Fallback candidate: $DISK"
+done
 
-# NVMe partition naming: nvme0n1 → nvme0n1p1, SATA: sda → sda1
+[ -z "$DISK" ] && { echo "$(ts) [ERROR] No disk found"; exit 1; }
+echo "$(ts) [OK] Selected disk: $DISK"
+
+# ── Safety: never touch root disk ────────────────────────────────────────────
+
+[ "$DISK" = "/dev/$ROOT_DISK" ] && { echo "$(ts) [ERROR] Refusing to wipe root disk!"; exit 1; }
+
+# ── Partition naming ─────────────────────────────────────────────────────────
+
 case "$DISK" in
-    *nvme*) PART="${DISK}p1" ;;
-    *)      PART="${DISK}1"  ;;
+    *nvme*|*mmcblk*) PART="${DISK}p1" ;;
+    *)               PART="${DISK}1"  ;;
 esac
-echo "$(date +%F_%T) [INFO] Target: $DISK -> $PART"
+echo "$(ts) [INFO] Target partition: $PART"
 
-# ------------------------------------------------------------------------------
-# SECTION 6 — DISK PREPARATION
-# Unmount, flush multipath/dm, kill holders, wipe signatures + partition tables.
-# ------------------------------------------------------------------------------
+# ── Unmount existing ─────────────────────────────────────────────────────────
 
-# Protect root disk
-ROOT_SOURCE=$(findmnt -n -o SOURCE / 2>/dev/null || echo "")
-ROOT_DISK=""
-if test -n "$ROOT_SOURCE" && test "$ROOT_SOURCE" != "LiveOS_rootfs" && test -b "$ROOT_SOURCE"; then
-    ROOT_DISK=$(lsblk -no PKNAME "$ROOT_SOURCE" 2>/dev/null | head -1)
-fi
-if test -n "$ROOT_DISK" && test "$DISK" = "/dev/$ROOT_DISK"; then
-    echo "$(date +%F_%T) [ERROR] DISK=$DISK is the root disk! Aborting." >&2
-    exit 1
-fi
+echo "$(ts) [STEP] Unmounting any existing mounts"
+runq umount "$MOUNT"
+runq umount "$PART"
 
-# Unmount all partitions on this disk
-for p in $(lsblk -ln -o NAME "$DISK" 2>/dev/null | tail -n +2); do
-    echo "$(date +%F_%T) [INFO] Unmounting /dev/$p"
-    umount -f "/dev/$p" 2>/dev/null || true
-done
-umount -f "$DISK" 2>/dev/null || true
+# ── Wipe disk ────────────────────────────────────────────────────────────────
 
-# --- Flush multipath / device-mapper (PERC H745 fix) ---
-DISK_SHORT=$(basename "$DISK")
+echo "$(ts) [STEP] Wiping disk signatures"
+run wipefs -af "$DISK"
 
-if command -v multipath &>/dev/null; then
-    echo "$(date +%F_%T) [INFO] Flushing multipath on $DISK..."
-    MP_MAP=$(multipath -ll 2>/dev/null | grep -B1 "$DISK_SHORT" | grep -oP '^\S+' | head -1)
-    test -n "$MP_MAP" && multipath -f "$MP_MAP" 2>/dev/null || true
-    multipath -f "$DISK" 2>/dev/null || true
-fi
+# ── Partition disk ───────────────────────────────────────────────────────────
 
-# Remove device-mapper entries holding this disk or its partitions
-if command -v dmsetup &>/dev/null; then
-    for dm in $(dmsetup ls 2>/dev/null | awk '{print $1}'); do
-        # Check if this dm device depends on our disk
-        if dmsetup deps "$dm" 2>/dev/null | grep -q "($(cat /sys/block/$DISK_SHORT/dev 2>/dev/null))"; then
-            echo "$(date +%F_%T) [INFO] Removing dm device: $dm"
-            dmsetup remove "$dm" 2>/dev/null || true
-        fi
-    done
+echo "$(ts) [STEP] Creating GPT partition"
+run parted -s "$DISK" mklabel gpt mkpart primary ext4 1MiB 100%
+run partprobe "$DISK"
+run udevadm settle --timeout=30
 
-    # Also remove holders from sysfs
-    for p in "$DISK_SHORT" $(lsblk -ln -o NAME "$DISK" 2>/dev/null | tail -n +2); do
-        holders_dir="/sys/block/$DISK_SHORT/$p/holders"
-        test "$p" = "$DISK_SHORT" && holders_dir="/sys/block/$DISK_SHORT/holders"
-        if test -d "$holders_dir"; then
-            for holder in $(ls "$holders_dir" 2>/dev/null); do
-                echo "$(date +%F_%T) [INFO] Removing holder $holder on $p"
-                dmsetup remove "$holder" 2>/dev/null || true
-            done
-        fi
-    done
-fi
+# ── Wait for partition ───────────────────────────────────────────────────────
 
-# Kill any remaining processes + flush buffers
-fuser -km "$DISK" 2>/dev/null || true
-test -b "$PART" && fuser -km "$PART" 2>/dev/null || true
-blockdev --flushbufs "$DISK" 2>/dev/null || true
-udevadm settle --timeout=30 2>/dev/null || true
-
-# Wipe disk-level signatures
-echo "$(date +%F_%T) [INFO] Wiping $DISK..."
-wipefs -af "$DISK"
-test -b "$PART" && wipefs -af "$PART" 2>/dev/null || true
-udevadm settle --timeout=30 2>/dev/null || true
-
-# Zap partition tables
-sgdisk --zap-all "$DISK" || {
-    rc=$?
-    if test $rc -eq 2; then
-        echo "$(date +%F_%T) [WARN] sgdisk zap returned $rc (likely clean disk, continuing)"
-    else
-        exit $rc
+echo "$(ts) [STEP] Waiting for $PART"
+for i in 1 2 3 4 5; do
+    if [ -b "$PART" ]; then
+        echo "$(ts) [OK] $PART ready (attempt $i)"
+        break
     fi
-}
-
-# Force kernel to drop old partition table
-blockdev --rereadpt "$DISK" 2>/dev/null || true
-udevadm settle --timeout=30 2>/dev/null || true
-sleep 2
-
-# ------------------------------------------------------------------------------
-# SECTION 7 — PARTITION CREATION
-# ------------------------------------------------------------------------------
-echo "$(date +%F_%T) [INFO] Creating GPT partition..."
-sgdisk -n 1:0:0 -t 1:8300 "$DISK"
-sleep 2
-
-# Force kernel to re-read new partition table
-blockdev --rereadpt "$DISK" 2>/dev/null || true
-udevadm settle --timeout=30 2>/dev/null || true
-
-for _pp in 1 2 3; do
-    partprobe "$DISK" 2>/dev/null && break || sleep 3
-done
-udevadm settle --timeout=30 2>/dev/null || true
-
-# Flush multipath AGAIN (it may re-claim after partition creation)
-if command -v multipath &>/dev/null; then
-    multipath -f "$DISK" 2>/dev/null || true
-fi
-if command -v dmsetup &>/dev/null; then
-    DISK_SHORT=$(basename "$DISK")
-    PART_SHORT=$(basename "$PART" 2>/dev/null)
-    for p in "$DISK_SHORT" "$PART_SHORT"; do
-        holders_dir="/sys/block/$DISK_SHORT/$p/holders"
-        test "$p" = "$DISK_SHORT" && holders_dir="/sys/block/$DISK_SHORT/holders"
-        if test -d "$holders_dir"; then
-            for holder in $(ls "$holders_dir" 2>/dev/null); do
-                echo "$(date +%F_%T) [INFO] Removing post-partition holder $holder"
-                dmsetup remove "$holder" 2>/dev/null || true
-            done
-        fi
-    done
-fi
-udevadm settle --timeout=30 2>/dev/null || true
-
-echo "$(date +%F_%T) [INFO] Waiting for $PART..."
-for i in $(seq 1 15); do
-    lsblk "$PART" >/dev/null 2>&1 && break
-    sleep 1
-done
-
-if ! lsblk "$PART" >/dev/null 2>&1; then
-    echo "$(date +%F_%T) [ERROR] $PART never appeared after 15s" >&2
-    exit 1
-fi
-echo "$(date +%F_%T) [OK] Partition $PART ready"
-
-# Wipe partition-level signatures + flush holders BEFORE mkfs
-echo "$(date +%F_%T) [INFO] Wiping signatures on $PART..."
-wipefs -af "$PART"
-fuser -km "$PART" 2>/dev/null || true
-udevadm settle --timeout=10 2>/dev/null || true
-
-# ------------------------------------------------------------------------------
-# SECTION 8 — FILESYSTEM CREATION
-# ------------------------------------------------------------------------------
-if test "${#FS_LABEL}" -gt 16; then
-    echo "$(date +%F_%T) [ERROR] FS_LABEL '$FS_LABEL' exceeds 16 char ext4 limit" >&2
-    exit 1
-fi
-
-echo "$(date +%F_%T) [INFO] Formatting $PART as ext4 (label=$FS_LABEL)..."
-mkfs.ext4 -F -L "$FS_LABEL" "$PART"
-
-# ------------------------------------------------------------------------------
-# SECTION 9 — UUID RETRIEVAL
-# ------------------------------------------------------------------------------
-udevadm settle --timeout=30 2>/dev/null || true
-UUID=""
-for i in $(seq 1 5); do
-    UUID=$(blkid -p -s UUID -o value "$PART" 2>/dev/null || true)
-    test -n "$UUID" && break
+    echo "$(ts) [INFO] Attempt $i — sleeping 2s"
     sleep 2
 done
+[ -b "$PART" ] || { echo "$(ts) [ERROR] $PART not found"; exit 1; }
 
-if test -z "$UUID"; then
-    echo "$(date +%F_%T) [ERROR] UUID lookup failed for $PART" >&2
-    exit 1
-fi
-echo "$(date +%F_%T) [INFO] UUID=$UUID"
+# ── Format ───────────────────────────────────────────────────────────────────
 
-# ------------------------------------------------------------------------------
-# SECTION 10 — FSTAB UPDATE (idempotent)
-# ------------------------------------------------------------------------------
-if test -z "$MOUNT_POINT"; then
-    echo "$(date +%F_%T) [ERROR] MOUNT_POINT is empty, aborting fstab edit" >&2
-    exit 1
-fi
-cp /etc/fstab "/etc/fstab.bak.$(date +%s)"
+echo "$(ts) [STEP] Formatting $PART as ext4"
+run mkfs.ext4 -F -L etcd_data "$PART"
 
-mkdir -p "$MOUNT_POINT"
-sed -i "\|[[:space:]]${MOUNT_POINT}[[:space:]]|d" /etc/fstab
-echo "UUID=${UUID} ${MOUNT_POINT} ext4 ${MOUNT_OPTS} 0 2" >> /etc/fstab
-echo "$(date +%F_%T) [OK] fstab entry added"
+# ── Ping UUID ────────────────────────────────────────────────────────────────
 
-# ------------------------------------------------------------------------------
-# SECTION 11 — MOUNT VERIFICATION
-# ------------------------------------------------------------------------------
-umount "$MOUNT_POINT" 2>/dev/null || true
-mount "$MOUNT_POINT"
-systemctl daemon-reload 2>/dev/null || true
+echo "$(ts) [STEP] Pinging UUID"
+ping_uuid "$PART"
+UUID=$(blkid -s UUID -o value "$PART" 2>/dev/null || true)
+[ -z "$UUID" ] && { echo "$(ts) [ERROR] UUID is empty"; exit 1; }
+echo "$(ts) [OK] UUID=$UUID"
 
-if ! mountpoint -q "$MOUNT_POINT"; then
-    echo "$(date +%F_%T) [ERROR] Mount verification failed" >&2
-    exit 1
-fi
-echo "$(date +%F_%T) [OK] Mounted: $PART -> $MOUNT_POINT"
+# ── Update fstab ─────────────────────────────────────────────────────────────
 
-# ------------------------------------------------------------------------------
-# SECTION 12 — ETCD USER, OWNERSHIP & PERMISSIONS
-# ------------------------------------------------------------------------------
-getent group etcd >/dev/null 2>&1 || groupadd --system etcd
-id etcd >/dev/null 2>&1 || useradd --system --no-create-home --shell /sbin/nologin --gid etcd etcd
-chown -R etcd:etcd "$MOUNT_POINT"
-chmod 700 "$MOUNT_POINT"
-echo "$(date +%F_%T) [OK] Ownership etcd:etcd, mode 700"
+echo "$(ts) [STEP] Updating /etc/fstab"
+run mkdir -p "$MOUNT"
+run cp /etc/fstab "/etc/fstab.bak.$(date +%s)"
+run sed -i "\|[[:space:]]${MOUNT}[[:space:]]|d" /etc/fstab
+FSTAB_LINE="UUID=$UUID $MOUNT ext4 defaults,noatime,nofail 0 2"
+echo "$FSTAB_LINE" >> /etc/fstab
+echo "$(ts) [OK] fstab entry added: $FSTAB_LINE"
 
-# ------------------------------------------------------------------------------
-# SECTION 13 — FINAL STATUS REPORT
-# ------------------------------------------------------------------------------
-ls -ld "$MOUNT_POINT"
-df -h "$MOUNT_POINT"
-echo "$(date +%F_%T) [OK] ===== etcd-disk-setup.sh DONE ====="
-{% endraw %}
+# ── Dump fstab entry ─────────────────────────────────────────────────────────
+
+dump_fstab_entry "$MOUNT"
+
+# ── Mount ────────────────────────────────────────────────────────────────────
+
+echo "$(ts) [STEP] Mounting $MOUNT"
+runq systemctl daemon-reload
+run mount "$MOUNT"
+mountpoint -q "$MOUNT" || { echo "$(ts) [ERROR] Mount verification failed"; exit 1; }
+echo "$(ts) [OK] Mounted: $PART -> $MOUNT"
+
+# ── etcd user + perms ────────────────────────────────────────────────────────
+
+echo "$(ts) [STEP] Configuring etcd user/perms"
+getent group etcd >/dev/null || run groupadd --system etcd
+id etcd >/dev/null 2>&1     || run useradd --system -M -s /sbin/nologin -g etcd etcd
+run chown etcd:etcd "$MOUNT"
+run chmod 700 "$MOUNT"
+
+# ── Final Summary ────────────────────────────────────────────────────────────
+
+echo ""
+echo "$(ts) [INFO] ── Final Summary ──"
+echo "$(ts) [INFO] Disk:      $DISK"
+echo "$(ts) [INFO] Partition: $PART"
+echo "$(ts) [INFO] UUID:      $UUID"
+echo "$(ts) [INFO] Mount:     $MOUNT"
+echo ""
+df -h "$MOUNT"
+echo ""
+ping_uuid "$PART"
+dump_fstab_entry "$MOUNT"
+echo ""
+echo "$(ts) [OK] ===== DONE ====="
