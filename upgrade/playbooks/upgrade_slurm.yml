@@ -82,6 +82,34 @@
         msg: "[UPGRADE] Component '{{ component_name }}' — status changed to: in-progress"
       when: not slurm_skip
 
+    - name: Check for existing reboot state file
+      ansible.builtin.stat:
+        path: /opt/omnia/.data/slurm_upgrade_reboot_state.yml
+      register: _reboot_state_stat
+      when: not slurm_skip
+
+    - name: Load reboot state from previous run
+      ansible.builtin.include_vars:
+        file: /opt/omnia/.data/slurm_upgrade_reboot_state.yml
+        name: _reboot_state
+      when:
+        - not slurm_skip
+        - _reboot_state_stat.stat.exists | default(false)
+
+    - name: Set previously successful reboot list
+      ansible.builtin.set_fact:
+        slurm_previously_rebooted: "{{ _reboot_state.successfully_rebooted | default([]) }}"
+      when:
+        - not slurm_skip
+        - _reboot_state_stat.stat.exists | default(false)
+
+    - name: Initialize previously rebooted list (no prior state)
+      ansible.builtin.set_fact:
+        slurm_previously_rebooted: []
+      when:
+        - not slurm_skip
+        - not (_reboot_state_stat.stat.exists | default(false))
+
 # ============================================================================
 # Create OIM host group (needed for cloud-init/BSS update on OIM)
 # ============================================================================
@@ -243,6 +271,15 @@
       ansible.builtin.meta: end_host
       when: ssh_check is failed
 
+    - name: Skip reboot — node successfully rebooted in previous run
+      when: inventory_hostname in (hostvars['localhost']['slurm_previously_rebooted'] | default([]))
+      block:
+        - name: Mark node as previously completed
+          ansible.builtin.set_fact:
+            node_status: "{{ node_status | combine({'reboot': true, 'ssh': true, 'sinfo': true}) }}"
+        - name: End host — already successfully rebooted
+          ansible.builtin.meta: end_host
+
     # ---- REBOOT ----
     - name: Reboot node
       ansible.builtin.reboot:
@@ -289,6 +326,41 @@
       ansible.builtin.set_fact:
         node_status: "{{ node_status | combine({'sinfo': (svc is defined and svc.rc == 0)}) }}"
       when: node_status.ssh or reboot_result is succeeded
+
+# ============================================================================
+# Play 2b: Verify slurmctld health and node count on controller
+# ============================================================================
+- name: Verify slurmctld health on controller nodes
+  hosts: slurm_control_node_x86_64
+  gather_facts: false
+  tasks:
+    - name: Skip if slurm upgrade not needed
+      ansible.builtin.meta: end_play
+      when: hostvars['localhost']['slurm_skip'] | default(false) | bool
+
+    - name: Verify slurmctld is accepting requests
+      ansible.builtin.command: scontrol ping
+      register: ctld_ping
+      changed_when: false
+      failed_when: false
+      retries: 6
+      delay: 10
+      until: ctld_ping.rc == 0
+
+    - name: Get node list from sinfo on controller
+      ansible.builtin.command: sinfo -h -o "%n"
+      register: ctld_sinfo
+      changed_when: false
+      failed_when: false
+      when: ctld_ping.rc == 0
+
+    - name: Set ctld health fact
+      ansible.builtin.set_fact:
+        ctld_health:
+          hostname: "{{ inventory_hostname }}"
+          ctld_up: "{{ ctld_ping.rc == 0 }}"
+          sinfo_ok: "{{ ctld_sinfo is defined and ctld_sinfo.rc | default(1) == 0 }}"
+          sinfo_node_count: "{{ ctld_sinfo.stdout_lines | default([]) | length }}"
 
 # ============================================================================
 # Play 3: Slurm feature mark complete
@@ -349,9 +421,34 @@
         failure_nodes: "{{ unreachable_nodes + reboot_nodes + ssh_nodes + sinfo_nodes }}"
         success_nodes: "{{ filtered_nodes }}"
 
+    - name: Collect controller node health results
+      ansible.builtin.set_fact:
+        ctld_results: >-
+          {{
+            (groups['slurm_control_node_x86_64'] | default([]))
+            | map('extract', hostvars, 'ctld_health')
+            | select('defined') | list
+          }}
+
+    - name: Identify ctld and sinfo failures on controller
+      ansible.builtin.set_fact:
+        ctld_down_nodes: "{{ ctld_results | selectattr('ctld_up', 'equalto', false) | list }}"
+        ctld_sinfo_fail_nodes: "{{ ctld_results | selectattr('sinfo_ok', 'equalto', false) | list }}"
+
+    - name: Write reboot state file
+      ansible.builtin.copy:
+        content: >-
+          {{ {'successfully_rebooted': success_nodes | map(attribute='hostname') | list,
+              'failed': failure_nodes | map(attribute='hostname') | list} | to_nice_yaml }}
+        dest: /opt/omnia/.data/slurm_upgrade_reboot_state.yml
+        mode: '0644'
+
     - name: Set slurm upgrade failed
       ansible.builtin.set_fact:
-        slurm_upgrade_failed: "{{ failure_nodes | length > 0 }}"
+        slurm_upgrade_failed: >-
+          {{ (failure_nodes | length > 0)
+             or (ctld_down_nodes | default([]) | length > 0)
+             or (ctld_sinfo_fail_nodes | default([]) | length > 0) }}
 
     - name: Generate and display failure report
       when: slurm_upgrade_failed
@@ -363,11 +460,25 @@
           vars:
             failure_report: |
               ================================================================
-              SLURM CLUSTER STATUS SUMMARY
+              SLURM CLUSTER UPGRADE STATUS SUMMARY
               ================================================================
 
               Total Nodes: {{ slurm_nodes | length }}
-              Successful booted slurm nodes: {{ filtered_nodes | length }}
+              Successful booted slurm nodes: {{ success_nodes | length }}
+              {% if ctld_down_nodes | length > 0 %}
+
+              -> CONTROLLER DOWN ({{ ctld_down_nodes | length }})
+              ─────────────────────────────────────────────────────────────────
+              {{ ctld_down_nodes | map(attribute='hostname') | join(', ') }}
+              slurmctld is NOT responding (scontrol ping failed)
+              {% endif %}
+              {% if ctld_sinfo_fail_nodes | length > 0 %}
+
+              -> SINFO FAILED ON CONTROLLER ({{ ctld_sinfo_fail_nodes | length }})
+              ─────────────────────────────────────────────────────────────────
+              {{ ctld_sinfo_fail_nodes | map(attribute='hostname') | join(', ') }}
+              sinfo returned non-zero on controller — cluster may be degraded
+              {% endif %}
               {% if unreachable_nodes | length > 0 %}
 
               -> UNREACHABLE NODES ({{ unreachable_nodes | length }})
@@ -395,6 +506,22 @@
 
               -> NEXT STEPS
               ─────────────────────────────────────────────────────────────────
+              {% if ctld_down_nodes | length > 0 %}
+              CONTROLLER DOWN:
+                - Check slurmctld service: systemctl status slurmctld
+                - Review logs: journalctl -u slurmctld -n 100
+                - Restart if needed: systemctl restart slurmctld
+                - Verify config: scontrol show config
+                - Re-run upgrade playbook after controller is healthy
+
+              {% endif %}
+              {% if ctld_sinfo_fail_nodes | length > 0 %}
+              SINFO FAILURE ON CONTROLLER:
+                - Check slurmctld logs: journalctl -u slurmctld -n 100
+                - Verify all node entries: sinfo -a -R
+                - Check for DOWN nodes and reason: sinfo -t down
+
+              {% endif %}
               {% if unreachable_nodes | length > 0 %}
               UNREACHABLE NODES:
                 - Check network connectivity: ping {{ unreachable_nodes[0].hostname }}
@@ -437,6 +564,8 @@
           =======================================================================
           Verified: {{ success_nodes | length }} / {{ slurm_nodes | length }} nodes
             Reboot complete | SSH active | Slurm (sinfo) responding on all nodes.
+          Controller: slurmctld UP | sinfo OK
+            {{ ctld_results | default([]) | map(attribute='sinfo_node_count') | map('int') | sum }} node(s) visible from controller.
           Cluster is ready for workload submission.
           =======================================================================
       when: not slurm_upgrade_failed
