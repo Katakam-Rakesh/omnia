@@ -135,13 +135,13 @@
     - name: Get dell/helm-charts git tar
       ansible.builtin.get_url:
         url: "{{ offline_git_path }}/helm-charts/{{ helm_charts_git }}"
-        dest: "{{ k8s_client_mount_path }}/{{ csi_powerscale_dir }}/{{ helm_charts_dir }}.tar.gz"
+        dest: "{{ k8s_client_mount_path }}/{{ csi_powerscale_dir }}/{{ helm_charts_git }}"
         mode: "{{ permission_644 }}"
 
     - name: Get external-snapshotter git tar
       ansible.builtin.get_url:
         url: "{{ offline_git_path }}/external-snapshotter/{{ external_snapshotter_git }}"
-        dest: "{{ k8s_client_mount_path }}/{{ csi_powerscale_dir }}/{{ external_snapshotter_dir }}.tar.gz"
+        dest: "{{ k8s_client_mount_path }}/{{ csi_powerscale_dir }}/{{ external_snapshotter_git }}"
         mode: "{{ permission_644 }}"
 
     - name: Transfer storage class template to nfs share (inside versioned directory)
