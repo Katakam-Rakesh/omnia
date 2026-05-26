@@ -78,10 +78,9 @@
         - name: Renew OpenCHAMI certificates
           ansible.builtin.include_tasks: renew_certificates.yml
 
-        # Resolve direct HTTP endpoints for SMD/BSS containers. This
-        # overrides the default https://localhost:8443 (HAProxy) endpoints
-        # with direct http://<container-ip>:<port> addresses, bypassing
-        # TLS entirely for health checks and API validation.
+        # Re-resolve HAProxy-based endpoints after cert renewal restart.
+        # HAProxy port 8443 is stable, but re-reading the ochami config
+        # ensures we pick up any config changes from cert renewal.
         - name: Resolve SMD/BSS endpoints after certificate renewal
           ansible.builtin.include_tasks: resolve_admin_ip.yml
 
