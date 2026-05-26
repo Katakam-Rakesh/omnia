@@ -250,7 +250,7 @@
     - name: Check BSS boot parameters via API
       ansible.builtin.shell: |
         set -o pipefail
-        curl -s {{ openchami_bss_endpoint }}/bootparameters 2>/dev/null | head -5 || echo "bss_unavailable"
+        curl -sk {{ openchami_bss_endpoint }}/bootparameters 2>/dev/null | head -5 || echo "bss_unavailable"
       register: bss_bootparams
       changed_when: false
       failed_when: false

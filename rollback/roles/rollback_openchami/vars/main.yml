@@ -46,9 +46,18 @@ postgres_db_name: "hmsds"
 oim_metadata_path: "/opt/omnia/.data/oim_metadata.yml"
 
 # OpenCHAMI API endpoints (HAProxy-based, same as upgrade_openchami)
+# At runtime, resolve_admin_ip.yml reads the HAProxy base URL from the ochami
+# CLI config and overrides these with set_fact. HAProxy port 8443 is published
+# on the host and stays stable across container restarts.
 openchami_smd_endpoint: "https://localhost:8443/hsm/v2"
 openchami_bss_endpoint: "https://localhost:8443/boot/v1"
 ca_cert_path: /root_ca/root_ca.crt
+
+# ochami CLI config path — contains the HAProxy base URL for the cluster
+ochami_config_path: "/etc/ochami/config.yaml"
+
+# HAProxy fallback URL used when ochami CLI config is missing or unreadable
+openchami_haproxy_fallback: "https://localhost:8443"
 
 # v2.2 containers that must be stopped and removed during rollback
 # These are the post-upgrade containers from upgrade_openchami
