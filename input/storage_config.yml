@@ -118,7 +118,7 @@ mounts:
     functional_group_prefix: ["service_kube"]
 
   - name: "vast_storage"
-    source: "172.16.0.254:/mnt/share/vast"
+    source: "172.16.107.77:/share/vast"
     mount_point: "/mnt/vast"
     mount_params: "vast_rdma"
     functional_group_prefix: ["slurm_node", "login"]
@@ -139,21 +139,21 @@ mounts:
 #
 
 mount_params:
-  # Default NFS mount - standard NFS4.1 with high-performance options
+  # Default NFS mount
   nfs_default:
     fs_type: "nfs"
-    mnt_opts: "nosuid,rw,sync,hard,intr"
+    mnt_opts: "nosuid,rw,sync,hard"
     dump_freq: "0"
     fsck_pass: "0"
 
-  # VAST NFS storage - standard configuration
+  # VAST NFS RDMA storage over IB - standard configuration
   vast_rdma:
     fs_type: "nfs"
-    mnt_opts: "proto=rdma,port=20049,nconnect=8,timeo=600,retrans=2,rsize=1048576,wsize=1048576,hard,intr,localaddr=192.168.0.23"
+    mnt_opts: "proto=rdma,nconnect=8,timeo=600,retrans=2,rsize=1048576,wsize=1048576,hard"
 
   vast_nfs:
     fs_type: "nfs"
-    mnt_opts: "nosuid,rw,sync,hard,intr"
+    mnt_opts: "nosuid,rw,sync,hard"
 
 # -----------------------------Powervault-------------------------------------------
 # powervault_config
