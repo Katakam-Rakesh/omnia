@@ -71,7 +71,7 @@
 # ───────────────────────────────────────────────────────────────────────────
 - name: Load PowerScale target version from JSON
   ansible.builtin.set_fact:
-    csi_powerscale_packages_json: "{{ lookup('file', input_project_dir + '/config/x86_64/rhel/' + cluster_os_version + '/csi_driver_powerscale.json') | from_json }}"
+    csi_powerscale_packages_json: "{{ lookup('file', input_project_dir + '/config/x86_64/rhel/' + cluster_os_version + '/csi_driver_powerscale.json') | from_json }}"  # noqa yaml[line-length]
   failed_when: false
   register: powerscale_json_load
 

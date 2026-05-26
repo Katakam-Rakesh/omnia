@@ -180,8 +180,6 @@
       The upgrade playbook will NOT install PowerScale CSI Driver.
       Proceeding with Kubernetes upgrade only.
 
-      If you want to install PowerScale CSI Driver, run the provision playbook
-      after the upgrade completes.
       ═══════════════════════════════════════════════════════════════════════════
   when: (upgrade_status.addon_upgrade.powerscale.status | default('pending')) == 'not_installed'
 
@@ -273,7 +271,6 @@
       ansible.builtin.fail:
         msg: "{{ msg_addon_powerscale_failed }}"
 
-
 # ── Run addon validation ──────────────────────────────────────────
 - name: Validate addons
   ansible.builtin.include_tasks: step_addon_validation.yml
@@ -285,4 +282,3 @@
       addon_upgrade:
         status: completed
         completed_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
-

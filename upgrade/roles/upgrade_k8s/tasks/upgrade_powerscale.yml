@@ -77,7 +77,7 @@
     cmd: |
       set -o pipefail
       kubectl get pods -n {{ powerscale_namespace }} -l app=isilon-controller -o json | \
-        jq -r '.items[] | select(.status.phase=="Running" and 
+        jq -r '.items[] | select(.status.phase=="Running" and
         (.status.conditions[] | select(.type=="Ready" and .status=="True"))) | .metadata.name' | wc -l
     executable: /bin/bash
   register: powerscale_controller_ready_count

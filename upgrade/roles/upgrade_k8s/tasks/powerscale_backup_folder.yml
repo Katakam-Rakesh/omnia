@@ -116,7 +116,7 @@
 - name: Backup each PVC using PowerScale StorageClass
   delegate_to: "{{ kube_vip }}"
   ansible.builtin.shell:
-    cmd: kubectl get pvc {{ item.split(' ')[1] }} -n {{ item.split(' ')[0] }} -o yaml > {{ backup_dir }}/csi/pvc-{{ item.split(' ')[1] }}-{{ item.split(' ')[0] }}.yaml
+    cmd: kubectl get pvc {{ item.split(' ')[1] }} -n {{ item.split(' ')[0] }} -o yaml > {{ backup_dir }}/csi/pvc-{{ item.split(' ')[1] }}-{{ item.split(' ')[0] }}.yaml  # noqa yaml[line-length]
   loop: "{{ powerscale_pvcs.stdout_lines }}"
   when: powerscale_pvcs.stdout_lines is defined and powerscale_pvcs.stdout_lines | length > 0
   register: pvc_backup_results
