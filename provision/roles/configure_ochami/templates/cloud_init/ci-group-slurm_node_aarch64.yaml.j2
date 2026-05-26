@@ -446,15 +446,13 @@
 {% endfor %}
         # VAST storage: create subdirectory structure for compute node
         - mkdir -pv {{ vast_mount_point }}/apps {{ vast_mount_point }}/home {{ vast_mount_point }}/scratch {{ vast_mount_point }}/projects
-        - mkdir -pv {{ vast_mount_point }}/scratch/$(hostname -s)/tmp
         - mkdir -pv /apps /home /scratch /projects
         - echo "{{ vast_mount_point }}/apps  /apps  none  bind  0  0" >> /etc/fstab
         - echo "{{ vast_mount_point }}/home  /home  none  bind  0  0" >> /etc/fstab
         - echo "{{ vast_mount_point }}/scratch  /scratch  none  bind  0  0" >> /etc/fstab
-        - echo "{{ vast_mount_point }}/scratch/$(hostname -s)/tmp  /tmp  none  bind  0  0" >> /etc/fstab
         - echo "{{ vast_mount_point }}/projects  /projects  none  bind  0  0" >> /etc/fstab
         - mount -av
-        - chmod 1777 /tmp /scratch
+        - chmod 1777 /scratch
         - /usr/local/bin/install_nvidia_driver.sh
 {% if dcgm_support %}
         - /usr/local/bin/setup_dcgm.sh
