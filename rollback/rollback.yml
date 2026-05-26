@@ -20,7 +20,7 @@
 #   oim_metadata.yml is read-only. Rollback manifest fields are derived
 #   directly from it:
 #     omnia_version           →  source_version (currently installed)
-#     omnia_previous_version  →  target_version (rolling back to)
+#     previous_omnia_version  →  target_version (rolling back to)
 #     upgrade_backup_dir      →  backup_dir
 #
 # LOCK POLICY:
@@ -191,7 +191,7 @@
           rollback_id: "rollback-{{ 9999 | random }}"
           triggered_from_upgrade_id: "{{ upgrade_manifest.upgrade_id | default('unknown') }}"
           source_version: "{{ oim_metadata.omnia_version }}"
-          target_version: "{{ oim_metadata.omnia_previous_version }}"
+          target_version: "{{ oim_metadata.previous_omnia_version }}"
           rollback_status: "in-progress"
           backup_dir: "{{ oim_metadata.upgrade_backup_dir }}"
           component_status:
@@ -227,6 +227,11 @@
     openchami_vars_suppport: false
     omnia_metadata_support: true
 
+- name: Create OIM group for SSH connection
+  ansible.builtin.import_playbook: ../utils/create_container_group.yml
+  tags: always
+  vars:
+    oim_group: true
 
  # ─── BuildStream terminal gate detection for rollback ───
 # If BuildStream was enabled during upgrade and downstream components
@@ -425,8 +430,14 @@
           - ""
           - "Upgrade manifest archived; next upgrade run will start fresh."
           - ""
-          - "NEXT STEP: Run 'sudo ./omnia.sh --rollback' on the OIM host"
-          - "to complete the core container rollback."
+          - "========================================="
+          - "       NEXT REQUIRED STEP"
+          - "========================================="
+          - "Exit the omnia_core container and run the following command on the OIM host:"
+          - ""
+          - "  sudo ./omnia.sh --rollback"
+          - ""
+          - "This will rollback the omnia_core container image to the previous version."
 
 # ──────────────────────────────────────────────────────────────────────
 # Guaranteed terminal cleanup (C-30) — defense-in-depth against
