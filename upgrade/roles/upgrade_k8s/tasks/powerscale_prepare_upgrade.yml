@@ -67,14 +67,48 @@
   when: powerscale_node_ds.rc != 0
 
 # ───────────────────────────────────────────────────────────────────────────
-# Step 1: Set PowerScale upgrade paths (using csi_powerscale_dir from detect_addon_versions.yml)
+# Step 1: Extract PowerScale target version and directory name from JSON
+# ───────────────────────────────────────────────────────────────────────────
+- name: Load PowerScale target version from JSON
+  ansible.builtin.set_fact:
+    csi_powerscale_packages_json: "{{ lookup('file', input_project_dir + '/config/x86_64/rhel/' + cluster_os_version + '/csi_driver_powerscale.json') | from_json }}"
+  failed_when: false
+  register: powerscale_json_load
+
+- name: Extract PowerScale target version and directory name
+  ansible.builtin.set_fact:
+    csi_powerscale_dir: >-
+      {{ csi_powerscale_packages_json['csi_driver_powerscale']['cluster']
+         | selectattr('type', 'equalto', 'git')
+         | selectattr('package', 'search', 'csi-powerscale')
+         | map(attribute='package')
+         | first
+         if powerscale_json_load is succeeded
+         else 'unknown' }}
+    powerscale_target_version: >-
+      {{ csi_powerscale_packages_json['csi_driver_powerscale']['cluster']
+         | selectattr('type', 'equalto', 'git')
+         | selectattr('package', 'search', 'csi-powerscale')
+         | map(attribute='package')
+         | first
+         | regex_replace('^csi-powerscale-', '')
+         if powerscale_json_load is succeeded
+         else 'unknown' }}
+
+- name: Fail if csi_powerscale_dir could not be extracted
+  ansible.builtin.fail:
+    msg: "Failed to extract csi_powerscale_dir from JSON. PowerScale upgrade cannot proceed."
+  when: csi_powerscale_dir == 'unknown' or csi_powerscale_dir is not defined
+
+# ───────────────────────────────────────────────────────────────────────────
+# Step 2: Set PowerScale upgrade paths
 # ───────────────────────────────────────────────────────────────────────────
 - name: Set PowerScale upgrade paths
   ansible.builtin.set_fact:
     powerscale_nfs_version_dir: "{{ k8s_client_mount_path }}/{{ csi_powerscale_dir }}"
-    powerscale_nfs_csi_install_script: "{{ powerscale_nfs_version_dir }}/dell-csi-helm-installer/csi-install.sh"
-    powerscale_nfs_values_file: "{{ powerscale_nfs_version_dir }}/values.yaml"
-    powerscale_nfs_secret_file: "{{ powerscale_nfs_version_dir }}/secret.yaml"
+    powerscale_nfs_csi_install_script: "{{ k8s_client_mount_path }}/{{ csi_powerscale_dir }}/dell-csi-helm-installer/csi-install.sh"
+    powerscale_nfs_values_file: "{{ k8s_client_mount_path }}/{{ csi_powerscale_dir }}/values.yaml"
+    powerscale_nfs_secret_file: "{{ k8s_client_mount_path }}/{{ csi_powerscale_dir }}/secret.yaml"
     powerscale_cluster_version_dir: "{{ powerscale_cluster_base }}/{{ csi_powerscale_dir }}"
     powerscale_csi_install_script: "{{ powerscale_cluster_base }}/{{ csi_powerscale_dir }}/dell-csi-helm-installer/csi-install.sh"
     powerscale_cluster_values_file: "{{ powerscale_cluster_base }}/{{ csi_powerscale_dir }}/values.yaml"
