@@ -15,17 +15,17 @@
 # TODO: project_default read from input_dir
 - name: Include omnia_config
   ansible.builtin.include_vars:
-    file: "{{ slurm_2_1_backup_dir_effective }}/input/project_default/omnia_config.yml"
+    file: "{{ input_project_dir }}/omnia_config.yml"
     name: omnia_config
 
 - name: Include storage_config.yml
   ansible.builtin.include_vars:
-    file: "{{ slurm_2_1_backup_dir_effective }}/input/project_default/storage_config.yml"
+    file: "{{ input_project_dir }}/storage_config.yml"
     name: storage_config
 
 - name: Read provision_config.yml
   ansible.builtin.include_vars:
-    file: "{{ slurm_2_1_backup_dir_effective }}/input/project_default/provision_config.yml"
+    file: "{{ input_project_dir }}/provision_config.yml"
     name: provision_config
 
 - name: Set facts for slurm
@@ -34,7 +34,12 @@
 
 - name: Select the nfs client parameters for slurm
   ansible.builtin.set_fact:
-    slurm_nfs: "{{ storage_config.nfs_client_params | selectattr('nfs_name', 'in', filter_slurm_nfs) | list }}"
+    slurm_nfs: "{{ storage_config.mounts | selectattr('name', 'in', filter_slurm_nfs) | list }}"
+
+- name: Vast storage not supported during upgrade
+  ansible.builtin.fail:
+    msg: "Vast storage is not supported during upgrade. Please remove the 'vast_storage_name' from the slurm_cluster configuration in omnia_config.yml."
+  when: "'vast_storage_name' in omnia_config.slurm_cluster[0]"
 
 # MOUNTED and READY
 - name: Install NFS client with bolt-on support
@@ -49,7 +54,7 @@
 - name: Set oim_shared_path fact
   ansible.builtin.set_fact:
     oim_shared_path: "{{ oim_metadata.oim_shared_path | trim }}"
-    slurm_nfs_mounted_path: "{{ slurm_nfs[0].client_share_path }}/slurm"
+    slurm_nfs_mounted_path: "{{ slurm_nfs[0].mount_point }}/slurm"
 
 - name: Remove ctld tracking file
   ansible.builtin.file:
