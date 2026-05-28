@@ -25,7 +25,7 @@
     fs_type: "{{ item.fs_type | default(resolved_mount_profile.fs_type | default('auto')) }}"
     mnt_opts: "{{ item.mnt_opts | default(resolved_mount_profile.mnt_opts | default('defaults')) }}"
     dump_freq: "{{ item.dump_freq | default(resolved_mount_profile.dump_freq | default('0')) }}"
-    fsck_pass: "{{ item.fsck_pass | default(resolved_mount_profile.fsck_pass | default('0')) }}" 
+    fsck_pass: "{{ item.fsck_pass | default(resolved_mount_profile.fsck_pass | default('0')) }}"
 
 - name: Create the directory for mounting on OIM
   ansible.builtin.file:
