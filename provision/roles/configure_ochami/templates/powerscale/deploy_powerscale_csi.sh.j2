@@ -90,7 +90,7 @@ else
       encoded_config=$(base64 -w 0 /tmp/updated_config.yaml)
       kubectl patch secret isilon-creds -n isilon \
         --type merge \
-        -p "{\"data\":{\"config\":\"${encoded_config}\"}}}" >/dev/null 2>&1 || POWERSCALE_DEPLOYMENT_FAILED=1
+        -p "{\"data\":{\"config\":\"${encoded_config}\"}}" >/dev/null 2>&1 || POWERSCALE_DEPLOYMENT_FAILED=1
       rm -f /tmp/decoded_config.yaml /tmp/updated_config.yaml
       echo "isilon-creds secret created and patched successfully."
     fi
