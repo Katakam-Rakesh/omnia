@@ -156,6 +156,24 @@ def _append_unique_source(pkg_sources, source):
     if source not in pkg_sources:
         pkg_sources.append(source)
 
+def _merge_package_entries(dst, src):
+    """Merge package fields from src into dst, combining sets and sources."""
+    # Merge architectures and bundles (both are sets)
+    if 'architectures' in src and src['architectures']:
+        dst.setdefault('architectures', set()).update(src['architectures'])
+    if 'bundles' in src and src['bundles']:
+        dst.setdefault('bundles', set()).update(src['bundles'])
+    # Merge sources (deduplicated)
+    for s in src.get('sources', []) or []:
+        _append_unique_source(dst.setdefault('sources', []), s)
+    # Prefer explicit tag/version/url if missing in dst
+    if not dst.get('tag') and src.get('tag'):
+        dst['tag'] = src['tag']
+    if not dst.get('version') and src.get('version'):
+        dst['version'] = src['version']
+    if not dst.get('url') and src.get('url'):
+        dst['url'] = src['url']
+
 def _render_templated_url(template: str, bundle_name: str, versions_by_name: dict) -> str:
     """Render very simple Jinja-like templates used in config URLs.
 
@@ -291,16 +309,17 @@ def collect_packages_from_config(config_dir, allowed_bundles_by_arch, versions_b
                         if version:
                             git_key = f"{pkg_name}_{pkg_type}_{version}"
                             if git_key != key:
-                                # Migrate any data already stored
-                                # under the short key if this is the
-                                # first version we encounter.
-                                if key in packages and git_key not in packages:
+                                # Always consolidate under the version-aware key
+                                if git_key in packages and key in packages:
+                                    _merge_package_entries(packages[git_key], packages.pop(key))
+                                elif key in packages:
                                     packages[git_key] = packages.pop(key)
                                 key = git_key
-                                packages[key]['name'] = pkg_name
-                                packages[key]['type'] = pkg_type
-                                packages[key]['architectures'].add(arch)
-                                packages[key]['bundles'].add(bundle_name)
+                            # Ensure fields are set on the consolidated entry
+                            packages[key]['name'] = pkg_name
+                            packages[key]['type'] = pkg_type
+                            packages[key]['architectures'].add(arch)
+                            packages[key]['bundles'].add(bundle_name)
                         packages[key]['url'] = url
                         packages[key]['version'] = version
                         if url:
@@ -313,8 +332,24 @@ def collect_packages_from_config(config_dir, allowed_bundles_by_arch, versions_b
                             )
                     elif pkg_type == 'image':
                         tag = pkg.get('tag', '')
-                        packages[key]['tag'] = tag
-                        packages[key]['version'] = tag
+                        # Use tag-aware key for images so two entries with the same
+                        # name but different tags are treated as distinct packages.
+                        img_key = f"{pkg_name}_{pkg_type}_{tag}" if tag else f"{pkg_name}_{pkg_type}"
+                        if tag and img_key != key:
+                            # Always consolidate under the tag-aware key
+                            if img_key in packages and key in packages:
+                                _merge_package_entries(packages[img_key], packages.pop(key))
+                            elif key in packages:
+                                packages[img_key] = packages.pop(key)
+                            key = img_key
+                        # Ensure fields are set on the consolidated entry
+                        packages[key]['name'] = pkg_name
+                        packages[key]['type'] = pkg_type
+                        packages[key]['architectures'].add(arch)
+                        packages[key]['bundles'].add(bundle_name)
+                        if tag:
+                            packages[key]['tag'] = tag
+                            packages[key]['version'] = tag
 
     return packages
 
@@ -458,17 +493,23 @@ def generate_catalog(input_dir, software_config_path, pxe_mapping_file):
     return catalog
 
 def build_functional_layers(functional_packages, pxe_groups, role_package_map):
-    """Build FunctionalLayer from PXE groups **and** inferred role+arch combos.
+    """Build FunctionalLayer strictly from PXE groups.
 
-    PXE groups control os_* layers directly.  For every other role that
-    has mapped packages we generate ``<role>_<arch>`` layers for each
-    architecture that has at least one matching package.  This ensures
-    the adapter policy can always find the functional layers it expects
-    (e.g. ``slurm_node_x86_64``) even when the PXE mapping only lists
-    one architecture for that role.
+    Only role+arch combinations explicitly listed in the PXE mapping file
+    get a functional layer.  For roles that have a ``_first`` variant in
+    the role_package_map, a separate ``<role>_first_<arch>`` layer is
+    also emitted – but only for architectures present in the PXE file.
     """
     functional_layers = []
     generated: set = set()   # track names already emitted
+
+    # Build a map of base_role -> set of architectures from PXE groups
+    pxe_role_arches: dict[str, set] = {}
+    for pxe_group in pxe_groups:
+        role_name = pxe_group.replace('_x86_64', '').replace('_aarch64', '')
+        pxe_arch = _extract_arch_from_pxe_group(pxe_group)
+        if pxe_arch:
+            pxe_role_arches.setdefault(role_name, set()).add(pxe_arch)
 
     # ── 1. PXE-driven layers (os_* and any explicit PXE entries) ──
     for pxe_group in pxe_groups:
@@ -494,14 +535,13 @@ def build_functional_layers(functional_packages, pxe_groups, role_package_map):
             })
         generated.add(pxe_group)
 
-    # ── 2. Infer missing role+arch layers from role_package_map ──
-    # For each role that has packages, ensure a layer exists for every
-    # architecture that has at least one package in that role.
-    _ARCHES = ('x86_64', 'aarch64')
+    # ── 2. Generate _first variant layers for PXE-listed role+arch combos ──
     for role_name, pkg_ids in role_package_map.items():
-        if role_name == 'os':
-            continue  # os layers are PXE-only
-        for arch in _ARCHES:
+        if not role_name.endswith('_first'):
+            continue
+        base_role = role_name[:-6]  # strip "_first"
+        allowed_arches = pxe_role_arches.get(base_role, set())
+        for arch in allowed_arches:
             layer_name = f"{role_name}_{arch}"
             if layer_name in generated:
                 continue
@@ -511,22 +551,11 @@ def build_functional_layers(functional_packages, pxe_groups, role_package_map):
                 if pid in functional_packages
                 and arch in functional_packages[pid].get('Architecture', [])
             ]
-            # Also merge _first packages
-            first_role = role_name + "_first"
-            if first_role in role_package_map:
-                for pid in role_package_map[first_role]:
-                    if (
-                        pid in functional_packages
-                        and arch in functional_packages[pid].get('Architecture', [])
-                        and pid not in filtered
-                    ):
-                        filtered.append(pid)
-                filtered.sort()
 
             if filtered:
                 functional_layers.append({
                     "Name": layer_name,
-                    "FunctionalPackages": filtered,
+                    "FunctionalPackages": sorted(filtered),
                 })
             generated.add(layer_name)
 
@@ -598,6 +627,12 @@ def map_packages_to_roles(packages, config_dir, allowed_bundles, bundle_roles, p
                         git_key = f"{pkg_name}_{pkg_type}_{pkg['version']}"
                         if git_key in package_id_map:
                             key = git_key
+                    # For image packages, include tag in key when present (must
+                    # match the key used in collect_packages_from_config)
+                    if pkg_type == 'image' and pkg.get('tag'):
+                        img_key = f"{pkg_name}_{pkg_type}_{pkg['tag']}"
+                        if img_key in package_id_map:
+                            key = img_key
 
                     if key in package_id_map:
                         pkg_id = package_id_map[key]
