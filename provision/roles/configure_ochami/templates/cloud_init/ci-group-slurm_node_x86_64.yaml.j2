@@ -462,7 +462,7 @@
         - chmod 1777 /tmp /scratch
 {% if slurm_node_present %}
         - /usr/local/bin/slurm_cuda_coordinator.sh || echo "CUDA coordinator setup failed (non-critical)"
-        - timeout 300 /usr/local/bin/install_cuda_driver.sh || echo "CUDA driver install failed or timed out (non-critical)"
+        - timeout 900 /usr/local/bin/install_cuda_driver.sh || echo "CUDA driver install failed or timed out (non-critical)"
 {% if dcgm_support %}
         - timeout 300 /usr/local/bin/install_dcgm.sh || echo "DCGM install failed or timed out (non-critical)"
 {% endif %}
