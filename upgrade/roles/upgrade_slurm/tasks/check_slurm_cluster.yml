@@ -17,7 +17,7 @@
     slurm_ctld_host: >-
       {{ slurm_host_group_map
          | dict2items
-         | selectattr('value', 'equalto', 'slurm_control_node_x86_64')
+         | selectattr('value', 'match', '^slurm_control_node_')
          | map(attribute='key')
          | first }}
 
@@ -82,15 +82,23 @@
   delay: 5
   until: sinfo_idle_nodes.rc == 0
   delegate_to: "{{ slurm_ctld_host }}"
+  ignore_unreachable: true
+
+- name: Fail if slurm control node unreachable during idle node check
+  when: sinfo_idle_nodes.unreachable | default(false)
+  ansible.builtin.fail:
+    msg: >-
+      Slurm controller '{{ slurm_ctld_host }}' is unreachable during idle node state check.
+      Ensure slurmctld host is up and SSH is accessible, then re-run the upgrade playbook.
 
 - name: Fail if sinfo idle node query failed
-  when: sinfo_idle_nodes.rc != 0
+  when: sinfo_idle_nodes.rc | default(1) != 0
   ansible.builtin.fail:
     msg: "{{ sinfo_query_fail_msg }}"
   vars:
     sinfo_query_fail_msg:
       - "Failed to query node states from Slurm controller '{{ slurm_ctld_host }}'."
-      - "Error: {{ sinfo_idle_nodes.stderr }}"
+      - "Error: {{ sinfo_idle_nodes.stderr | default('(no error output)') }}"
       - "Ensure slurmctld is running and reachable, then re-run the upgrade playbook."
 
 - name: Identify compute nodes not in idle state

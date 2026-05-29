@@ -20,6 +20,19 @@
     rollback_manifest_path: /opt/omnia/.data/rollback_manifest.yml
     component_name: slurm
   tasks:
+    - name: Check if rollback manifest exists
+      ansible.builtin.stat:
+        path: "{{ rollback_manifest_path }}"
+      register: manifest_stat
+
+    - name: Fail if rollback manifest not found
+      ansible.builtin.fail:
+        msg: >-
+          Rollback manifest not found at '{{ rollback_manifest_path }}'.
+          Run the full rollback.yml playbook, or ensure the manifest exists
+          before running rollback_slurm.yml standalone.
+      when: not manifest_stat.stat.exists
+
     - name: Read rollback_manifest.yml
       ansible.builtin.include_vars:
         file: "{{ rollback_manifest_path }}"
@@ -176,6 +189,19 @@
         seconds: 10
         prompt: "SLURM ROLLBACK - Proceeding in 10 seconds..."
 
+    - name: Read oim_metadata for oim_node_name (standalone fallback)
+      ansible.builtin.include_vars:
+        file: /opt/omnia/.data/oim_metadata.yml
+        name: _oim_meta
+      when: hostvars['localhost']['oim_node_name'] is not defined
+
+    - name: Set oim_node_name from oim_metadata if not provided by parent playbook
+      ansible.builtin.set_fact:
+        oim_node_name: "{{ _oim_meta.oim_node_name }}"
+      delegate_to: localhost
+      delegate_facts: true
+      when: hostvars['localhost']['oim_node_name'] is not defined
+
     - name: Refresh OpenCHAMI access token
       ansible.builtin.include_tasks: "{{ playbook_dir }}/../../common/tasks/common/openchami_auth.yml"
       vars:
@@ -318,7 +344,7 @@
   connection: local
   gather_facts: false
   vars:
-    manifest_path: /opt/omnia/.data/rollback_manifest.yml
+    rollback_manifest_path: /opt/omnia/.data/rollback_manifest.yml
     component_name: slurm
   tasks:
     - name: Skip if slurm rollback not needed
@@ -338,6 +364,14 @@
     - name: Debug slurm nodes
       ansible.builtin.debug:
         var: slurm_nodes
+
+    - name: Fail if no slurm nodes found in inventory
+      ansible.builtin.fail:
+        msg: >-
+          No slurm_* or login_* hosts found in inventory.
+          The pxe_mapping may contain no slurm/login entries, or check_slurm_cluster.yml
+          did not populate the host groups. Verify pxe_mapping and re-run the rollback playbook.
+      when: slurm_nodes | length == 0
 
     - name: Set filtered nodes
       ansible.builtin.set_fact:
@@ -468,6 +502,17 @@
           Cluster is ready for workload submission.
           ============================================================
       when: not slurm_rollback_failed
+
+    - name: Remove reboot state file after successful rollback
+      ansible.builtin.file:
+        path: /opt/omnia/.data/slurm_rollback_reboot_state.yml
+        state: absent
+      when: not slurm_rollback_failed
+
+    - name: Read rollback_manifest.yml
+      ansible.builtin.include_vars:
+        file: "{{ rollback_manifest_path }}"
+        name: rollback_manifest
 
     - name: Mark slurm rollback as completed
       ansible.builtin.copy:

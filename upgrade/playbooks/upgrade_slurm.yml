@@ -24,6 +24,19 @@
     manifest_path: /opt/omnia/.data/upgrade_manifest.yml
     component_name: slurm
   tasks:
+    - name: Check if upgrade manifest exists
+      ansible.builtin.stat:
+        path: "{{ manifest_path }}"
+      register: manifest_stat
+
+    - name: Fail if upgrade manifest not found
+      ansible.builtin.fail:
+        msg: >-
+          Upgrade manifest not found at '{{ manifest_path }}'.
+          Run the full upgrade.yml playbook, or ensure the manifest exists
+          before running upgrade_slurm.yml standalone.
+      when: not manifest_stat.stat.exists
+
     - name: Read upgrade_manifest.yml
       ansible.builtin.include_vars:
         file: "{{ manifest_path }}"
@@ -204,6 +217,19 @@
         seconds: 10
         prompt: "SLURM UPGRADE - Proceeding in 10 seconds..."
 
+    - name: Read oim_metadata for oim_node_name (standalone fallback)
+      ansible.builtin.include_vars:
+        file: /opt/omnia/.data/oim_metadata.yml
+        name: _oim_meta
+      when: hostvars['localhost']['oim_node_name'] is not defined
+
+    - name: Set oim_node_name from oim_metadata if not provided by parent playbook
+      ansible.builtin.set_fact:
+        oim_node_name: "{{ _oim_meta.oim_node_name }}"
+      delegate_to: localhost
+      delegate_facts: true
+      when: hostvars['localhost']['oim_node_name'] is not defined
+
     - name: Refresh OpenCHAMI access token
       ansible.builtin.include_tasks: "{{ playbook_dir }}/../../common/tasks/common/openchami_auth.yml"
       vars:
@@ -227,6 +253,7 @@
             ci_defaults_file_path: "{{ openchami_work_dir }}/cloud-init/ci-defaults.yaml"
             ci_common_file_path: "{{ openchami_work_dir }}/cloud-init/ci-group-common.yaml"
             hostname_file_path: "{{ openchami_work_dir }}/nodes/hostname.yaml"
+            update_cloud_init: true
             update_ci_defaults: true
             update_ci_common: true
             update_hostname: true
@@ -282,6 +309,12 @@
           ansible.builtin.meta: end_host
 
     # ---- REBOOT ----
+    - name: Remove stale SSH host key before reboot
+      ansible.builtin.known_hosts:
+        name: "{{ inventory_hostname }}"
+        state: absent
+      delegate_to: localhost
+
     - name: Start reboot msg
       ansible.builtin.debug:
         msg: "Triggering reboot for node {{ inventory_hostname }}"
@@ -338,6 +371,7 @@
 - name: Verify slurmctld health on controller nodes
   hosts: slurm_control_node_x86_64
   gather_facts: false
+  ignore_unreachable: true
   tasks:
     - name: Skip if slurm upgrade not needed
       ansible.builtin.meta: end_play
@@ -348,22 +382,24 @@
       register: ctld_ping
       changed_when: false
       failed_when: false
+      ignore_unreachable: true
       retries: 6
       delay: 10
-      until: ctld_ping.rc == 0
+      until: ctld_ping.rc | default(1) == 0
 
     - name: Get node list from sinfo on controller
       ansible.builtin.command: sinfo -h -o "%n"
       register: ctld_sinfo
       changed_when: false
       failed_when: false
-      when: ctld_ping.rc == 0
+      ignore_unreachable: true
+      when: ctld_ping.rc | default(1) == 0
 
     - name: Set ctld health fact
       ansible.builtin.set_fact:
         ctld_health:
           hostname: "{{ inventory_hostname }}"
-          ctld_up: "{{ ctld_ping.rc == 0 }}"
+          ctld_up: "{{ ctld_ping.rc | default(1) == 0 }}"
           sinfo_ok: "{{ ctld_sinfo is defined and ctld_sinfo.rc | default(1) == 0 }}"
           sinfo_node_count: "{{ ctld_sinfo.stdout_lines | default([]) | length }}"
 
@@ -395,6 +431,14 @@
     - name: Debug slurm nodes
       ansible.builtin.debug:
         var: slurm_nodes
+
+    - name: Fail if no slurm nodes found in inventory
+      ansible.builtin.fail:
+        msg: >-
+          No slurm_* or login_* hosts found in inventory.
+          The pxe_mapping may contain no slurm/login entries, or check_slurm_cluster.yml
+          did not populate the host groups. Verify pxe_mapping and re-run the upgrade playbook.
+      when: slurm_nodes | length == 0
 
     - name: Set filtered nodes
       ansible.builtin.set_fact:
@@ -574,6 +618,11 @@
           Cluster is ready for workload submission.
           =======================================================================
       when: not slurm_upgrade_failed
+
+    - name: Remove reboot flag after successful verification
+      ansible.builtin.file:
+        path: /opt/omnia/.data/slurm_upgrade_reboot_state.yml
+        state: absent
 
     - name: Include omnia_config
       ansible.builtin.include_vars:
