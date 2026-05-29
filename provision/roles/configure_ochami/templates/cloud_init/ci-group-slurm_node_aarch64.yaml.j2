@@ -454,11 +454,6 @@
         - echo "{{ vast_mount_point }}/projects  /projects  none  bind  0  0" >> /etc/fstab
         - mount -av
         - chmod 1777 /tmp /scratch
-        - /usr/local/bin/install_nvidia_driver.sh
-{% if dcgm_support %}
-        - /usr/local/bin/setup_dcgm.sh
-{% endif %}
-
 {% if slurm_node_present %}
         - |
           set -e

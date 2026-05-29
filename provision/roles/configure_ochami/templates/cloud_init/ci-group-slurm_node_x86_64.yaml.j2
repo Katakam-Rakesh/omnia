@@ -460,14 +460,9 @@
         - echo "{{ vast_mount_point }}/projects  /projects  none  bind  0  0" >> /etc/fstab
         - mount -av
         - chmod 1777 /tmp /scratch
-        # GPU setup with timeout protection - non-critical operations
-        - timeout 300 /usr/local/bin/install_nvidia_driver.sh || echo "NVIDIA driver install failed or timed out (non-critical)"
-{% if dcgm_support %}
-        - timeout 300 /usr/local/bin/setup_dcgm.sh || echo "DCGM setup failed or timed out (non-critical)"
-{% endif %}
 {% if slurm_node_present %}
         - /usr/local/bin/slurm_cuda_coordinator.sh || echo "CUDA coordinator setup failed (non-critical)"
-        - timeout 300 /usr/local/bin/install_cuda_driver.sh || echo "CUDA driver install failed or timed out (non-critical)"
+        - timeout 900 /usr/local/bin/install_cuda_driver.sh || echo "CUDA driver install failed or timed out (non-critical)"
 {% if dcgm_support %}
         - timeout 300 /usr/local/bin/install_dcgm.sh || echo "DCGM install failed or timed out (non-critical)"
 {% endif %}
