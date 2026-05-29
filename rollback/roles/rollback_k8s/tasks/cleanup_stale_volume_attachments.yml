@@ -72,12 +72,16 @@
     # ── Find stale VolumeAttachments (attached=false) ─────────────
     - name: Get stale VolumeAttachments (not attached)
       ansible.builtin.shell:
-        cmd: >-
-          set -o pipefail &&
-          kubectl --server=https://{{ first_cp_ip }}:6443
-          get volumeattachments
-          -o jsonpath='{range .items[?(@.status.attached==false)]}{.metadata.name}{"\t"}{.spec.attacher}{"\t"}{.spec.nodeName}{"\t"}{.spec.source.persistentVolumeName}{"\n"}{end}'
-          | grep -v '^$'
+        cmd: |
+          set -o pipefail
+          JPATH='{range .items[?(@.status.attached==false)]}'
+          JPATH+=$'{.metadata.name}\t{.spec.attacher}'
+          JPATH+=$'\t{.spec.nodeName}'
+          JPATH+=$'\t{.spec.source.persistentVolumeName}\n{end}'
+          kubectl --server=https://{{ first_cp_ip }}:6443 \
+            get volumeattachments \
+            -o jsonpath="$JPATH" \
+            | grep -v '^$'
       args:
         executable: /bin/bash
       delegate_to: "{{ groups_cp_first | first }}"
@@ -145,6 +149,7 @@
     - name: Clean up stale NFS mounts on all nodes
       ansible.builtin.shell:
         cmd: |
+          set -o pipefail
           cleaned=0
           for mnt in $(findmnt -t nfs,nfs4 -n -o TARGET 2>/dev/null \
                        | grep '/var/lib/kubelet/pods/' || true); do
