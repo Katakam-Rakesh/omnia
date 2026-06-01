@@ -500,16 +500,24 @@
         - echo "{{ cloud_init_slurm_nfs_path }} {{ client_mount_path }} nfs defaults,_netdev 0 0" >> /etc/fstab
         - mount -av
 {% endif %}
-
-{% if hostvars['localhost']['ucx_support'] or hostvars['localhost']['openmpi_support'] %}
-        - echo "One or more shared components (UCX / OpenMPI / LDMS) are enabled."
-        - /usr/local/bin/configure_ucx_openmpi_env.sh
+        # UCX and OpenMPI auto-compilation disabled
+        # DOCA UCX 1.20.0 and OpenMPI 4.1.9a1 used by default
+{% if hostvars['localhost']['ucx_support'] %}
+        - echo "===== UCX Configuration ====="
+        - echo "UCX version specified in software_config.json (available for manual compilation)"
+        - echo "Default stack - DOCA UCX 1.20.0 (system default)"
+{% endif %}
+{% if hostvars['localhost']['openmpi_support'] %}
+        - echo "===== OpenMPI Configuration ====="
+        - echo "OpenMPI version specified in software_config.json (available for manual compilation)"
+        - echo "Default stack - DOCA OpenMPI 4.1.9a1 (system default)"
 {% endif %}
 
 {% if ldms_support %}
         - echo " Starting LDMS setup " | tee -a /var/log/ldms-cloudinit.log
         - /root/ldms_sampler.sh
 {% endif %}
+        - echo "DOCA stack configured - UCX 1.20.0 + OpenMPI 4.1.9a1 (system default)"
         - /usr/local/bin/setup_nvhpc_sdk.sh
         - /usr/local/bin/export_nvhpc_env.sh
 
