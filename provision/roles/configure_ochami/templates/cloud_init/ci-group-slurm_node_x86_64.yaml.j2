@@ -390,18 +390,12 @@
           content: |
             {{ lookup('template', 'templates/hpc_tools/configure_ucx_openmpi_env.sh.j2') | indent(12) }}
 
+        # NVIDIA HPC SDK setup script (run manually: /usr/local/bin/setup_nvhpc_sdk.sh)
         - path: /usr/local/bin/setup_nvhpc_sdk.sh
           owner: root:root
           permissions: '{{ file_mode_755 }}'
           content: |
             {{ lookup('template', 'templates/hpc_tools/setup_nvhpc_sdk.sh.j2') | indent(12) }}
-
-        - path: /usr/local/bin/export_nvhpc_env.sh
-          owner: root:root
-          permissions: '{{ file_mode_755 }}'
-          content: |
-            {{ lookup('template', 'templates/hpc_tools/export_nvhpc_env.sh.j2') | indent(12) }}
-
 {% for pv_entry in cloud_init_groups_dict[functional_group_name].powervault_scripts | default([]) %}
         - path: /usr/local/bin/setup_iscsi_storage_{{ pv_entry.name }}.sh
           permissions: '{{ file_mode_755 }}'
@@ -511,9 +505,8 @@
         - echo " Starting LDMS setup " | tee -a /var/log/ldms-cloudinit.log
         - /root/ldms_sampler.sh || echo "LDMS setup failed (non-critical)"
 {% endif %}
-        - /usr/local/bin/setup_nvhpc_sdk.sh || echo "NVHPC SDK setup failed (non-critical)"
-        - /usr/local/bin/export_nvhpc_env.sh || echo "NVHPC environment export failed (non-critical)"
-
+        # NVIDIA HPC SDK: Script deployed to /usr/local/bin/setup_nvhpc_sdk.sh
+        # User must run manually after NVHPC is installed on compiler node
+        - echo "Run /usr/local/bin/setup_nvhpc_sdk.sh to setup NVIDIA HPC SDK"
         - systemctl restart slurmd
         - echo "Cloud-Init has completed successfully."
-
