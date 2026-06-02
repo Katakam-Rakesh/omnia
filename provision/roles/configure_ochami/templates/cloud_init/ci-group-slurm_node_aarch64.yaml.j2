@@ -162,7 +162,7 @@
             echo "[INFO] ===== Starting directory creation and NFS mounts for Pulp cert, Slurm and Munge (aarch64) ====="
             mkdir -p {{ client_mount_path }}/slurm/ssh
             echo "[INFO] Creating base directories for Slurm and Munge"
-            mkdir -pv {{ slurm_slurmd_log_dir_effective }} {{ slurm_slurmd_pid_dir_effective }} {{ slurm_slurmd_spool_dir_effective }} {{ slurm_epilog_dirs_all | join(' ') }} /etc/munge /cert /var/log/track /var/lib/packages /hpc_tools/container_images /hpc_tools/scripts
+            mkdir -pv {{ slurm_slurmd_log_dir_effective }} {{ slurm_slurmd_pid_dir_effective }} {{ slurm_slurmd_spool_dir_effective }} {{ slurm_epilog_dirs_all | join(' ') }} /etc/munge /cert /var/log/track /var/lib/packages
 
             echo "[INFO] Updating /etc/fstab with NFS entries for Pulp cert, Slurm and Munge paths"
             echo "{{ cloud_init_nfs_path }}/$(hostname -s)/var/log/slurm  {{ slurm_slurmd_log_dir_effective }}   nfs defaults,_netdev 0 0" >> /etc/fstab
@@ -171,9 +171,7 @@
             echo "{{ cloud_init_nfs_path }}/$(hostname -s)/etc/munge      /etc/munge       nfs defaults,_netdev 0 0" >> /etc/fstab
             echo "{{ trackfile_nfs_path }}    /var/log/track       nfs defaults,_netdev 0 0" >> /etc/fstab
             echo "{{ cloud_init_nfs_path }}/ssh {{ client_mount_path }}/slurm/ssh nfs defaults,_netdev 0 0" >> /etc/fstab
-            echo "{{ cloud_init_nfs_path}}/hpc_tools/  /hpc_tools nfs defaults,_netdev 0 0" >> /etc/fstab
             echo "{{ cloud_init_nfs_path }}/cert  /cert   nfs defaults,_netdev 0 0" >> /etc/fstab
-            echo "{{ cloud_init_slurm_nfs_path }} {{ client_mount_path }} nfs defaults,_netdev 0 0" >> /etc/fstab
             echo "{{ cloud_init_nfs_path }}/packages  /var/lib/packages   nfs defaults,_netdev 0 0" >> /etc/fstab
 
             chmod {{ file_mode }} /etc/fstab
@@ -343,12 +341,27 @@
 
             echo "[INFO] ===== Completed firewall and service configuration (aarch64) ====="
 
+{% if dns_enabled | default(false) | bool %}
+        - path: /etc/resolv.conf
+          owner: root:root
+          permissions: '0644'
+          content: |
+            search {{ domain_name }}
+            nameserver {{ admin_nic_ip }}
+            options timeout:1 attempts:2
+{% else %}
         - path: /etc/hosts
           append: true
           content: |
 {% for key in ip_name_map | sort %}
             {{ ip_name_map[key] }} {{ key }}
 {% endfor %}
+{% endif %}
+        - path: /etc/profile.d/create_scratch.sh
+          owner: root:root
+          permissions: '{{ file_mode_755 }}'
+          content: |
+            {{ lookup('template', 'templates/slurm/create_scratch.sh.j2') | indent(12) }}
 
         - path: /etc/sysconfig/slurmd
           owner: root:root
@@ -372,18 +385,19 @@
           permissions: '{{ file_mode_755 }}'
           content: |
             {{ lookup('template', 'templates/hpc_tools/configure_ucx_openmpi_env.sh.j2') | indent(12) }}
-
+            
+        - path: /usr/local/bin/setup_doca_mpi_env.sh
+          owner: root:root
+          permissions: '{{ file_mode_755 }}'
+          content: |
+            {{ lookup('template', 'templates/hpc_tools/setup_doca_mpi_env.sh.j2') | indent(12) }}
+            
+        # NVIDIA HPC SDK setup script (run manually: /usr/local/bin/setup_nvhpc_sdk.sh)
         - path: /usr/local/bin/setup_nvhpc_sdk.sh
           owner: root:root
           permissions: '{{ file_mode_755 }}'
           content: |
             {{ lookup('template', 'templates/hpc_tools/setup_nvhpc_sdk.sh.j2') | indent(12) }}
-
-        - path: /usr/local/bin/export_nvhpc_env.sh
-          owner: root:root
-          permissions: '{{ file_mode_755 }}'
-          content: |
-            {{ lookup('template', 'templates/hpc_tools/export_nvhpc_env.sh.j2') | indent(12) }}
 {% for pv_entry in cloud_init_groups_dict[functional_group_name].powervault_scripts | default([]) %}
         - path: /usr/local/bin/setup_iscsi_storage_{{ pv_entry.name }}.sh
           permissions: '{{ file_mode_755 }}'
@@ -394,7 +408,18 @@
       runcmd:
         - /usr/local/bin/set-ssh.sh
         - /usr/local/bin/configure_vast_installation.sh
-{# Mount-specific runcmd entries #}
+        # DOCA prerequisites - moved early to ensure RDMA is ready before vendor_data mounts
+        - /usr/local/bin/configure_dirs_and_mounts.sh
+        - cp /cert/pulp_webserver.crt /etc/pki/ca-trust/source/anchors && update-ca-trust
+        - sed -i 's/^gpgcheck=1/gpgcheck=0/' /etc/dnf/dnf.conf
+        # DOCA and IB configuration - now ready before vendor_data mounts
+        - bash /usr/local/bin/doca-install.sh || true
+        - bash /usr/local/bin/configure-ib-network.sh
+{% if hostvars['localhost']['openmpi_support'] %}
+        - bash /usr/local/bin/setup_doca_mpi_env.sh || echo "DOCA MPI environment setup failed (non-critical)"
+{% endif %}
+    
+{# Mount-specific runcmd entries - moved after DOCA to ensure RDMA is available #}
 {%- if cloud_init_groups_dict[functional_group_name].runcmd is defined %}
 {% for cmd in cloud_init_groups_dict[functional_group_name].runcmd %}
         - {{ cmd }}
@@ -423,15 +448,17 @@
 {% for pv_entry in cloud_init_groups_dict[functional_group_name].powervault_scripts | default([]) %}
         - bash /usr/local/bin/setup_iscsi_storage_{{ pv_entry.name }}.sh
 {% endfor %}
-        - /usr/local/bin/install_nvidia_driver.sh
-{% if dcgm_support %}
-        - /usr/local/bin/setup_dcgm.sh
-{% endif %}
-        - /usr/local/bin/configure_dirs_and_mounts.sh
-        - cp /cert/pulp_webserver.crt /etc/pki/ca-trust/source/anchors && update-ca-trust
-        - sed -i 's/^gpgcheck=1/gpgcheck=0/' /etc/dnf/dnf.conf
-        - bash /usr/local/bin/doca-install.sh || true
-        - bash /usr/local/bin/configure-ib-network.sh
+        # VAST storage: create subdirectory structure for compute node
+        - mkdir -pv {{ vast_mount_point }}/apps {{ vast_mount_point }}/slurm/hpc_tools {{ vast_mount_point }}/scratch {{ vast_mount_point }}/projects
+        - mkdir -pv {{ vast_mount_point }}/scratch/$(hostname -s)/tmp
+        - mkdir -pv /hpc_tools /apps /scratch /projects
+        - echo "{{ vast_mount_point }}/slurm/hpc_tools  /hpc_tools  none  bind  0  0" >> /etc/fstab
+        - echo "{{ vast_mount_point }}/apps  /apps  none  bind  0  0" >> /etc/fstab
+        - echo "{{ vast_mount_point }}/scratch  /scratch  none  bind  0  0" >> /etc/fstab
+        - echo "{{ vast_mount_point }}/scratch/$(hostname -s)/tmp  /tmp  none  bind  0  0" >> /etc/fstab
+        - echo "{{ vast_mount_point }}/projects  /projects  none  bind  0  0" >> /etc/fstab
+        - mount -av
+        - chmod 1777 /tmp /scratch
 {% if slurm_node_present %}
         - |
           set -e
@@ -451,9 +478,10 @@
         - /usr/local/bin/update_ldap_conf.sh
         - mkdir /ldapcerts
         - echo "{{ cloud_init_nfs_path_openldap }}/certs                /ldapcerts       nfs defaults,_netdev 0 0" >> /etc/fstab
-        - if ! mountpoint -q /home; then echo "{{ cloud_init_nfs_path_openldap }}/ldapuser /home nfs defaults,_netdev 0 0" >> /etc/fstab; fi
+        - mkdir -pv {{ vast_mount_point }}/{{ openldap_dir_name }}/ldapuser /home
+        - echo "{{ vast_mount_point }}/{{ openldap_dir_name }}/ldapuser /home  none  bind  0  0" >> /etc/fstab
         - chmod {{ file_mode }} /etc/fstab
-        - mount -a
+        - mount -av
         - yes | cp /ldapcerts/* /etc/openldap/certs
         - umount /ldapcerts
 
@@ -477,18 +505,26 @@
         - echo "{{ cloud_init_slurm_nfs_path }} {{ client_mount_path }} nfs defaults,_netdev 0 0" >> /etc/fstab
         - mount -av
 {% endif %}
-
-{% if hostvars['localhost']['ucx_support'] or hostvars['localhost']['openmpi_support'] %}
-        - echo "One or more shared components (UCX / OpenMPI / LDMS) are enabled."
-        - /usr/local/bin/configure_ucx_openmpi_env.sh
+        # UCX and OpenMPI auto-compilation disabled
+        # DOCA UCX 1.20.0 and OpenMPI 4.1.9a1 used by default
+{% if hostvars['localhost']['ucx_support'] %}
+        - echo "===== UCX Configuration ====="
+        - echo "UCX version specified in software_config.json (available for manual compilation)"
+        - echo "Default stack - DOCA UCX 1.20.0 (system default)"
+{% endif %}
+{% if hostvars['localhost']['openmpi_support'] %}
+        - echo "===== OpenMPI Configuration ====="
+        - echo "OpenMPI version specified in software_config.json (available for manual compilation)"
+        - echo "Default stack - DOCA OpenMPI 4.1.9a1 (system default)"
 {% endif %}
 
 {% if ldms_support %}
         - echo " Starting LDMS setup " | tee -a /var/log/ldms-cloudinit.log
         - /root/ldms_sampler.sh
 {% endif %}
-        - /usr/local/bin/setup_nvhpc_sdk.sh
-        - /usr/local/bin/export_nvhpc_env.sh
+        # NVIDIA HPC SDK: Script deployed to /usr/local/bin/setup_nvhpc_sdk.sh
+        # User must run manually after NVHPC is installed on compiler node
 
         - systemctl restart slurmd
         - echo "Cloud-Init has completed successfully."
+        - echo "To setup NVIDIA HPC SDK, run: /usr/local/bin/setup_nvhpc_sdk.sh"

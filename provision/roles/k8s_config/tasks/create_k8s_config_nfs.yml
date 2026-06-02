@@ -32,6 +32,7 @@
     csi_powerscale_driver_values_file_path: "{{ service_k8s_cluster[0].csi_powerscale_driver_values_file_path }}"
     nfs_storage_name: "{{ service_k8s_cluster[0].nfs_storage_name }}"
     k8s_crio_storage_size: "{{ service_k8s_cluster[0].k8s_crio_storage_size }}"
+    etcd_on_local_disk: "{{ service_k8s_cluster[0].etcd_on_local_disk | default(false) }}"
 
 - name: Read the service_k8s mount point
   ansible.builtin.set_fact:
@@ -101,17 +102,6 @@
         - nfs-client-provisioner
         - helm
         # - whereabouts
-
-    - name: Create subdirectories on NFS share
-      ansible.builtin.file:
-        path: "{{ k8s_client_mount_path }}/{{ item }}"
-        state: directory
-        mode: "{{ folder_mode }}"
-        owner: root
-        group: root
-      loop:
-        - csi-driver-powerscale
-      when: hostvars['localhost']['csi_driver_powerscale_support']
 
   rescue:
     - name: Fail with NFS export advice
@@ -250,11 +240,24 @@
     dest: "{{ k8s_client_mount_path }}/helm/{{ helm_package }}.tar.gz"
     mode: "{{ file_mode }}"
 
-- name: Untar helm tarball repo
+- name: Extract helm version from package name
+  ansible.builtin.set_fact:
+    helm_version: "{{ helm_package | regex_replace('^helm-v', '') | regex_replace('-amd64$', '') }}"
+
+- name: Ensure helm version directory exists
+  ansible.builtin.file:
+    path: "{{ k8s_client_mount_path }}/helm/linux-amd64-helm-v{{ helm_version }}"
+    state: directory
+    mode: '0755'
+
+- name: Untar helm tarball to version-specific directory
   ansible.builtin.unarchive:
     src: "{{ k8s_client_mount_path }}/helm/{{ helm_package }}.tar.gz"
     dest: "{{ k8s_client_mount_path }}/helm/"
     remote_src: true
+    extra_opts:
+      - "--transform"
+      - "s|^linux-amd64|linux-amd64-helm-v{{ helm_version }}|"
 
 # nfs client provisioner
 - name: Download nfs-client-provisioner tarball

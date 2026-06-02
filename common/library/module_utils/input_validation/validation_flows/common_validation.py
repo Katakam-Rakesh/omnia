@@ -1257,7 +1257,7 @@ def validate_smtp_server(data, errors, logger):
 
     smtp_server = data.get("smtp_server","")
     logger.info(f"smpt server info info {smtp_server}")
-    if len(smtp_server) != 1 or len(smtp_server) < 0:
+    if len(smtp_server) != 1:
         errors.append(
             create_error_msg(
                 "smpt_server",
@@ -1644,6 +1644,19 @@ def validate_omnia_config(
                     "slurm NFS not provided",
                     f"NFS name {', '.join(diff_set)} required for slurm is not defined in {storage_config}"
                     ))
+
+        # Validate vast_storage_name if provided
+        slurm_vast = [clst.get('vast_storage_name') for clst in data.get('slurm_cluster') if clst.get('vast_storage_name')]
+        if slurm_vast:
+            vast_names = [st.get('name') for st in st_config.get('mounts')]
+            diff_vast_set = set(slurm_vast).difference(set(vast_names))
+            if diff_vast_set:
+                errors.append(
+                    create_error_msg(
+                        input_file_path,
+                        "slurm VAST storage not found",
+                        f"VAST storage name {', '.join(diff_vast_set)} required for slurm is not defined in {storage_config}"
+                        ))
 
         # Validate node_hardware_defaults requires node_discovery_mode=homogeneous
         for clst in data.get('slurm_cluster', []):

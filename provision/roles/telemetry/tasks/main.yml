@@ -18,6 +18,12 @@
     file: "{{ telemetry_config_file_path }}"
     name: telemetry_config
 
+- name: Include telemetry storage configuration file
+  ansible.builtin.include_vars:
+    file: "{{ telemetry_storage_config_file }}"
+    name: telemetry_storage_config
+  failed_when: false
+
 - name: Derive sink support flags from collection_targets
   ansible.builtin.include_tasks: derive_sink_support_flags.yml
 
@@ -31,7 +37,7 @@
       ansible.builtin.include_tasks: load_service_images.yml
 
     - name: Check kube_vip reachability for validation
-      ansible.builtin.include_tasks: check_kube_vip_reachability.yml
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../common/tasks/common/check_kube_vip_reachability.yml"
       when:
         - victoria_metrics_support | default(false) | bool
         - kube_vip is defined
@@ -44,6 +50,12 @@
           (telemetry_config.telemetry_sources.ldms.metrics_enabled | default(false) | bool) or
           (telemetry_config.telemetry_sources.powerscale.metrics_enabled | default(false) | bool) or
           (telemetry_config.telemetry_sources.powerscale.logs_enabled | default(false) | bool) or
+          (telemetry_config.telemetry_sources.ufm.metrics_enabled | default(false) | bool) or
+          (telemetry_config.telemetry_sources.ufm.logs_enabled | default(false) | bool) or
+          (telemetry_config.telemetry_sources.vast.metrics_enabled | default(false) | bool) or
+          (telemetry_config.telemetry_sources.vast.logs_enabled | default(false) | bool) or
+          (telemetry_config.telemetry_sources.ome.metrics_enabled | default(false) | bool) or
+          (telemetry_config.telemetry_sources.ome.logs_enabled | default(false) | bool) or
           ldms_support | default(false) | bool
       block:
         - name: Set NFS info fact
@@ -58,12 +70,26 @@
         - telemetry_config.telemetry_sources.powerscale.metrics_enabled | default(false) | bool
       ansible.builtin.include_tasks: deploy_powerscale_metrics.yml
 
-    - name: Generate telemetry deployments (idrac/ldms/powerscale/vector)
+    - name: Deploy UFM telemetry metrics
+      when:
+        - telemetry_config.telemetry_sources.ufm.metrics_enabled | default(false) | bool
+      ansible.builtin.include_tasks: deploy_ufm_telemetry.yml
+
+    - name: Deploy VAST telemetry metrics
+      when:
+        - telemetry_config.telemetry_sources.vast.metrics_enabled | default(false) | bool
+      ansible.builtin.include_tasks: deploy_vast_telemetry.yml
+
+    - name: Generate telemetry deployments (idrac/ldms/powerscale/ome/vector)
       when:
         - >-
           (telemetry_config.telemetry_sources.idrac.metrics_enabled | default(false) | bool) or
           (telemetry_config.telemetry_sources.ldms.metrics_enabled | default(false) | bool) or
           (telemetry_config.telemetry_sources.powerscale.metrics_enabled | default(false) | bool) or
+          (telemetry_config.telemetry_sources.ufm.metrics_enabled | default(false) | bool) or
+          (telemetry_config.telemetry_sources.vast.metrics_enabled | default(false) | bool) or
+          (telemetry_config.telemetry_sources.ome.metrics_enabled | default(false) | bool) or
+          (telemetry_config.telemetry_sources.ome.logs_enabled | default(false) | bool) or
           (telemetry_config.telemetry_bridges.vector_ome.metrics_enabled | default(false) | bool) or
           (telemetry_config.telemetry_bridges.vector_ome.logs_enabled | default(false) | bool) or
           ldms_support | default(false) | bool
@@ -119,15 +145,11 @@
     - name: Generate telemetry deployment script
       ansible.builtin.include_tasks: generate_telemetry_script.yml
       when:
-        - >-
-          (telemetry_config.telemetry_sources.idrac.metrics_enabled | default(false) | bool) or
-          (telemetry_config.telemetry_sources.ldms.metrics_enabled | default(false) | bool) or
-          (telemetry_config.telemetry_sources.powerscale.metrics_enabled | default(false) | bool) or
-          ldms_support | default(false) | bool
+        - telemetry_enabled | default(false) | bool
       tags:
         - telemetry_deployment
 
-    - name: Apply telemetry configurations on upgrade
-      ansible.builtin.include_tasks: apply_telemetry_on_upgrade.yml
-      when:
-        - hostvars['localhost']['upgrade_enabled'] | default(false) | bool
+    # - name: Apply telemetry configurations on upgrade
+    #   ansible.builtin.include_tasks: apply_telemetry_on_upgrade.yml
+    #   when:
+    #     - hostvars['localhost']['upgrade_enabled'] | default(false) | bool

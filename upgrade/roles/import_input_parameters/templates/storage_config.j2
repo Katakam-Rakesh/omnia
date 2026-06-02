@@ -92,7 +92,7 @@ mounts:
   - name: {{ slurm_nfs_client_params.nfs_name }}
     source: "{{ slurm_nfs_client_params.server_ip | default('') }}:{{ slurm_nfs_client_params.server_share_path | default('') }}"
     mount_point: {{ slurm_nfs_client_params.client_share_path }}
-    mount_opts: "{{ slurm_nfs_client_params.client_mount_options | default('nosuid,rw,sync,hard,intr') }}"
+    mnt_opts: "{{ slurm_nfs_client_params.client_mount_options | default('nosuid,rw,sync,hard,intr') }}"
     fs_type: "nfs"
     mount_on_oim: true
     functional_group_prefix: ["slurm", "login"]
@@ -101,14 +101,31 @@ mounts:
   - name: {{ k8s_nfs_client_params.nfs_name }}
     source: "{{ k8s_nfs_client_params.server_ip | default('') }}:{{ k8s_nfs_client_params.server_share_path | default('') }}"
     mount_point: {{ k8s_nfs_client_params.client_share_path }}
-    mount_opts: "{{ k8s_nfs_client_params.client_mount_options | default('nosuid,rw,sync,hard,intr') }}"
+    mnt_opts: "{{ k8s_nfs_client_params.client_mount_options | default('nosuid,rw,sync,hard,intr') }}"
     fs_type: "nfs"
     mount_on_oim: true
     functional_group_prefix: ["service_kube"]
 {% endif %}
 {% endif %}
 
-# -------------------------Mount Params (Reusable Profiles)---------------------------
+  # VAST Storage - High-performance NFS for HPC tools and benchmarks
+  # This storage is critical for the Slurm cluster and must be accessible from OIM.
+  # Purpose: Serves as the centralized repository for HPC tools (UCX, OpenMPI, CUDA, benchmarks)
+  #          that are bind-mounted to /hpc_tools on compute and login nodes.
+  # OIM Access: The VAST server (172.16.107.77) must be accessible from OIM to copy hpc_tools
+  #             content during provisioning. OIM mounts this storage to populate the shared
+  #             hpc_tools directory structure before nodes boot.
+  # Configuration: The slurm_cluster section in omnia_config.yml should reference this storage
+  #                to ensure proper integration with cluster provisioning workflows.
+  # Note: Uses RDMA mount parameters for optimal performance on InfiniBand networks.
+#  - name: "vast_storage"
+#    source: "172.16.107.77:/share/vast"
+#    mount_point: "/mnt/vast"
+#    mount_params: "vast_rdma"
+#    mount_on_oim: true
+#    functional_group_prefix: ["slurm_node", "login"]
+
+# -----------------------------Mount Params (Profiles)-------------------------------
 # mount_params: Dictionary of named mount configuration profiles for reuse across mounts.
 #   Each profile is a named dictionary with optional fields:
 #   - fs_type: Filesystem type (nfs, nfs4, xfs, ext4, ext3, ext2, cifs, tmpfs, cephfs, vfat, ntfs, none, fuse.s3fs)
@@ -130,10 +147,14 @@ mount_params:
     fs_type: "nfs"
     mnt_opts: "nosuid,rw,sync,hard,intr"
 
-  # VAST NFS storage - RDMA protocol for high-performance environments
+  # VAST NFS RDMA storage over IB - standard configuration
   vast_rdma:
     fs_type: "nfs"
-    mnt_opts: "proto=rdma,port=20049,nconnect=8,timeo=600,retrans=2,rsize=1048576,wsize=1048576,hard,intr,localaddr=192.168.0.23"
+    mnt_opts: "proto=rdma,nconnect=8,timeo=600,retrans=2,rsize=1048576,wsize=1048576,hard"
+
+  vast_tcp:
+    fs_type: "nfs"
+    mnt_opts: "nosuid,rw,sync,hard"
 
 # -----------------------------Powervault-------------------------------------------
 # powervault_config

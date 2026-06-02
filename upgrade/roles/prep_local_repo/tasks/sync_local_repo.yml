@@ -24,7 +24,7 @@
     local_repo_config_path: "{{ upgrade_staging_dir }}/local_repo_config.yml"
     project_input_path: "{{ upgrade_staging_dir }}"
     default_archs: "{{ upgrade_active_architectures }}"
-    software_names: "{{ _enabled_components | map(attribute='key') | list }}"
+    software_names: "{{ enabled_components | map(attribute='key') | list }}"
     playbook_start_time: "{{ ansible_date_time.epoch }}"
 
 # Initialise sub_final_repo_urls (normally set by validate_subscription role)
@@ -54,7 +54,9 @@
     name: oim
     pulp_protocol: "{{ pulp_protocol }}"
     pulp_server_port: "{{ pulp_server_port }}"
-    ansible_connection: local
+    ansible_connection: ssh
+    ansible_host: "localhost"
+    ansible_port: "{{ oim_host_port }}"
 
 - name: "Sync — Display sync configuration"
   ansible.builtin.debug:
@@ -75,18 +77,17 @@
 - name: "Sync — Restore original input_project_dir"
   ansible.builtin.set_fact:
     input_project_dir: "{{ _original_input_project_dir }}"
+    project_input_path: "{{ _original_input_project_dir }}"
+    sw_config_json_path: "{{ _original_input_project_dir }}/software_config.json"
+    local_repo_config_file: "{{ _original_input_project_dir }}/local_repo_config.yml"
+    local_repo_config_path: "{{ _original_input_project_dir }}/local_repo_config.yml"
 
 - name: "Sync — Display sync completion"
   ansible.builtin.debug:
-    msg:
-      - "=========================================="
-      - "Local Repository Sync Completed"
-      - "=========================================="
-      - "Components synced: {{ software_names | join(', ') }}"
-      - "=========================================="
+    msg: "Local repo sync completed: {{ software_names | join(', ') }}"
 
-# - name: "sync — Cleanup staging directory"
-#   ansible.builtin.file:
-#     path: "{{ upgrade_staging_dir }}"
-#     state: absent
-#   when: upgrade_cleanup_staging | default(true)
+- name: "Sync — Cleanup staging directory"
+  ansible.builtin.file:
+    path: "{{ upgrade_staging_dir }}"
+    state: absent
+  when: upgrade_cleanup_staging | default(true)
