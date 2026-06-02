@@ -175,17 +175,13 @@
           content: |
             {{ lookup('template', 'templates/nodes/apptainer_mirror.conf.j2') | indent(12) }}
         
-        - path: /usr/local/bin/install_nvhpc_sdk.sh
+        # NVIDIA HPC SDK script (run manually: /usr/local/bin/setup_nvhpc_sdk.sh --install)
+        - path: /usr/local/bin/setup_nvhpc_sdk.sh
           owner: root:root
           permissions: '{{ file_mode_755 }}'
           content: |
-            {{ lookup('template', 'templates/hpc_tools/install_nvhpc_sdk.sh.j2') | indent(12) }}
-        
-        - path: /usr/local/bin/configure_nvhpc_env.sh
-          owner: root:root
-          permissions: '{{ file_mode_755 }}'
-          content: |
-            {{ lookup('template', 'templates/hpc_tools/configure_nvhpc_env.sh.j2') | indent(12) }}
+            {{ lookup('template', 'templates/hpc_tools/setup_nvhpc_sdk.sh.j2') | indent(12) }}
+
 {% for pv_entry in cloud_init_groups_dict[functional_group_name].powervault_scripts | default([]) %}
         - path: /usr/local/bin/setup_iscsi_storage_{{ pv_entry.name }}.sh
           permissions: '{{ file_mode_755 }}'
@@ -386,7 +382,8 @@
         - systemctl restart sshd
 
 {% endif %}
-        # nvidia sdk install
-        - /usr/local/bin/install_nvhpc_sdk.sh
-        - /usr/local/bin/configure_nvhpc_env.sh
+        # NVIDIA HPC SDK: Script deployed to /usr/local/bin/setup_nvhpc_sdk.sh
+        # User must run manually after cloud-init completes
+        - echo "Run /usr/local/bin/setup_nvhpc_sdk.sh --install to install NVIDIA HPC SDK"
         - echo "Cloud-Init has completed successfully."
+        
