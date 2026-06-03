@@ -92,7 +92,7 @@ def load_json(file_path):
         ValueError: If the JSON parsing fails.
     """
     try:
-        with open(file_path, 'r') as file:
+        with open(file_path, 'r', encoding='utf-8') as file:
             return json.load(file)
     except FileNotFoundError as exc:
         raise FileNotFoundError(f"Error: File '{file_path}' not found.") from exc
@@ -573,7 +573,7 @@ def get_csv_software(file_name):
     if not os.path.isfile(file_name):
         return csv_software
 
-    with open(file_name, mode='r') as csv_file:
+    with open(file_name, mode='r', encoding='utf-8') as csv_file:
         reader = csv.DictReader(csv_file)
         csv_software = [row.get(CSV_COLUMNS["column1"], "").strip()
                         for row in reader]
@@ -596,7 +596,7 @@ def get_failed_software(file_path):
     if not os.path.isfile(file_path):
         return failed_software
 
-    with open(file_path, mode='r') as csv_file:
+    with open(file_path, mode='r', encoding='utf-8') as csv_file:
         reader = csv.DictReader(csv_file)
         failed_software = [
             str(row.get(CSV_COLUMNS["column1"]) or "").strip()
@@ -796,7 +796,7 @@ def check_csv_existence(path):
 
 def read_status_csv(csv_path):
     """Reads the status.csv file and returns a list of row dictionaries."""
-    with open(csv_path, mode='r', newline='') as file:
+    with open(csv_path, mode='r', newline='', encoding='utf-8') as file:
         reader = csv.DictReader(file)
         return [row for row in reader]
 
@@ -911,7 +911,7 @@ def process_software(software, fresh_installation, json_path, csv_path, subgroup
     return combined, failed_packages
 
 def get_software_names(json_file_path):
-    with open(json_file_path, "r") as f:
+    with open(json_file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     softwares = data.get("softwares", [])
