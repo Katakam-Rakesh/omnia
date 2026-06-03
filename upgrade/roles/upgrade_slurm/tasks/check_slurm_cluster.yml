@@ -135,17 +135,19 @@
         seconds: 5
       vars:
         non_idle_report: |
+          ------------------------------------------------
           Pre-upgrade node state check FAILED.
+          ------------------------------------------------
           {{ slurm_non_idle_nodes | length }} compute node(s) are NOT in idle state.
-
+          ------------------------------------------------
           Non-idle nodes:
           {{ slurm_non_idle_nodes | join(', ') }}
-
+          ------------------------------------------------
           Current state (node / state / reason):
           {{ sinfo_non_idle_detail.stdout_lines | default(['(unable to retrieve)']) }}
-
+          ------------------------------------------------
           All slurm_node_* compute nodes must be idle before upgrade can proceed.
-
+          ------------------------------------------------
           Remediation — run the following on '{{ slurm_ctld_host }}':
           1. Cancel running jobs on affected nodes:
              scancel --nodelist={{ slurm_non_idle_nodes | join(',') }}
