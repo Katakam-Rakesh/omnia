@@ -37,7 +37,6 @@ if [ -z "$CUDA_VERSION" ]; then
         echo "[ERROR] Could not detect CUDA version from nvidia-smi"
         echo "[ERROR] CUDA driver is required for DCGM package version detection. Skipping DCGM setup."
         exit 1
-    fi
 else
     echo "[INFO] CUDA major version detected from nvidia-smi: $CUDA_VERSION"
 fi
