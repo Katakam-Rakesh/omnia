@@ -57,26 +57,10 @@
     - "etc/slurm"
     - "var/lib/mysql/slurm_acct_db"
 
-# - name: Backup slurm and mysql directories (minimal, exclude runtime files)
-#   ansible.builtin.synchronize:
-#     src: "{{ up_slurm_nfs_mounted_path }}/slurm/{{ ctld_list[0] }}/{{ item }}"
-#     dest: "{{ up_slurm_backup_path }}/{{ item }}"
-#     archive: true
-#     delete: false
-#     rsync_opts:
-#       - "--exclude=*.sock"
-#       - "--exclude=*.pid"
-#       - "--exclude=ibtmp*"
-#       - "--exclude=ib_logfile*"
-#       - "--exclude=undo*"
-#       - "--exclude=*.err"
-#       - "--exclude=tmp/"
-
-
-- name: Backup sluem etc/slurm and var/lib/mysql/slurm_acct_db directories
+- name: Backup slurm etc/slurm and var/lib/mysql/slurm_acct_db directories
   ansible.builtin.copy:
-    src: "{{ up_slurm_nfs_mounted_path }}/slurm/{{ ctld_list[0] }}/{{ item }}"
-    dest: "{{ up_slurm_backup_path }}/{{ item }}"
+    src: "{{ up_slurm_nfs_mounted_path }}/slurm/{{ ctld_list[0] }}/{{ item }}/"
+    dest: "{{ up_slurm_backup_path }}/{{ item }}/"
     remote_src: true
     mode: preserve
   register: conf_backup_result
