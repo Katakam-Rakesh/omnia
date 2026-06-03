@@ -65,8 +65,8 @@ if [[ "$IB_NIC_NAME" =~ ^(InfiniBand\.PCIe\.Slot\.|InfiniBand\.Slot\.|NIC\.Infin
     SLOT_NUMBER="${BASH_REMATCH[2]}"
     PORT_NUMBER="${BASH_REMATCH[3]}"
     echo "INFO: Successfully parsed slot-based format"
-    echo "INFO: Extracted slot number: $SLOT_NUMBER"
-    echo "INFO: Extracted port number: $PORT_NUMBER"
+    echo "INFO: Extracted slot number: $SLOT_NUMBER (will be ignored for device selection)"
+    echo "INFO: Extracted port number: $PORT_NUMBER (used for device selection)"
 elif [[ "$IB_NIC_NAME" =~ ^InfiniBand\.Single-([0-9]+)$ ]]; then
     PORT_NUMBER="${BASH_REMATCH[1]}"
     echo "INFO: Successfully parsed single-port format"
@@ -85,10 +85,6 @@ else
     echo "  - 'InfiniBand.Single-1' (single device)"
     exit 1
 fi
-
-echo "INFO: Successfully parsed slot-based format"
-    echo "INFO: Extracted slot number: $SLOT_NUMBER"
-    echo "INFO: Extracted port number: $PORT_NUMBER"
 
 # Check if IB hardware is present
 if ! ls /sys/class/infiniband/ >/dev/null 2>&1; then
@@ -117,40 +113,7 @@ for mlx_device in /sys/class/infiniband/mlx5_*; do
     fi
 done
 
-# Simple slot-to-device mapping function
-find_device_by_slot() {
-    local target_slot="$1"
-    
-    echo "DEBUG: Starting slot-based device search for slot '$target_slot'" >&2
-    
-    for mlx_device in /sys/class/infiniband/mlx5_*; do
-        [ -e "$mlx_device" ] || continue
-        device_name=$(basename "$mlx_device")
-        
-        # Get PCI address and extract slot number
-        pci_address=$(basename "$(readlink -f "/sys/class/infiniband/$device_name/device" 2>/dev/null)")
-        if [ -n "$pci_address" ]; then
-            # Extract slot from PCI address: 0000:17:00.0 → "17"
-            pci_slot=$(echo "$pci_address" | cut -d: -f2 | sed 's/^0*//')
-            target_clean=$(echo "$target_slot" | sed 's/^0*//')
-            
-            echo "DEBUG: Checking device $device_name: PCI $pci_address → slot $pci_slot (target: $target_clean)" >&2
-            
-            if [[ "$pci_slot" == "$target_clean" ]]; then
-                echo "SUCCESS: Found matching device! Slot $target_clean matches PCI slot $pci_slot for device $device_name" >&2
-                echo "$device_name"
-                return 0
-            else
-                echo "DEBUG: Slot mismatch - device $device_name has PCI slot $pci_slot, looking for slot $target_clean" >&2
-            fi
-        else
-            echo "DEBUG: Could not get PCI address for device $device_name" >&2
-        fi
-    done
-    
-    echo "ERROR: No device found matching slot '$target_slot'" >&2
-    return 1
-}
+
 
 # === DEVICE COUNT ANALYSIS AND SELECTION LOGIC ===
 echo "INFO: DEVICE ANALYSIS: Analyzing mlx5 device count for configuration strategy"
@@ -162,7 +125,7 @@ if [ "$MLX5_DEVICE_COUNT" -eq 0 ]; then
     
 elif [ "$MLX5_DEVICE_COUNT" -eq 1 ]; then
     echo "INFO: SINGLE-DEVICE MODE: Only one mlx5 device available - no slot-based mapping needed"
-    echo "INFO: SINGLE-DEVICE MODE: Using available device regardless of slot number in PXE mapping"
+    echo "INFO: SINGLE-DEVICE MODE: Using available device (slot number from PXE mapping ignored)"
     echo "INFO: SINGLE-DEVICE MODE: This ensures robustness for single-device deployments"
     
     MLX5_DEVICE=$(ls /sys/class/infiniband/ | grep mlx5 | head -1)
@@ -174,54 +137,61 @@ elif [ "$MLX5_DEVICE_COUNT" -eq 1 ]; then
     echo "SUCCESS: SINGLE-DEVICE MODE: Selected device '$MLX5_DEVICE' (only available device)"
     
 elif [ "$MLX5_DEVICE_COUNT" -gt 1 ]; then
-    echo "INFO: MULTI-DEVICE MODE: Found $MLX5_DEVICE_COUNT active mlx5 devices - using slot-based mapping"
-    echo "INFO: MULTI-DEVICE MODE: Slot-based mapping required for precise device selection"
+    echo "INFO: MULTI-DEVICE MODE: Found $MLX5_DEVICE_COUNT active mlx5 devices"
+    echo "INFO: MULTI-DEVICE MODE: Checking all devices for port $PORT_NUMBER with GUID validation"
     
-    if [ -z "$SLOT_NUMBER" ]; then
-        echo "ERROR: MULTI-DEVICE MODE: Multiple devices found but no slot number specified in PXE mapping"
-        echo "ERROR: MULTI-DEVICE MODE: PXE mapping contains: '$IB_NIC_NAME'"
-        echo "ERROR: MULTI-DEVICE MODE: Expected format: 'InfiniBand.PCIe.Slot.X-Y' where X is the slot number"
-        echo "ERROR: MULTI-DEVICE MODE: Please update PXE mapping file with correct slot numbers"
-        echo "ERROR: MULTI-DEVICE MODE: Available mlx5 devices with their PCI slots:"
+    # Array to store devices that have the specified port with valid GUID
+    MATCHING_DEVICES=()
+    
+    for mlx_device in /sys/class/infiniband/mlx5_*; do
+        [ -e "$mlx_device" ] || continue
+        device_name=$(basename "$mlx_device")
+        
+        # Check if port exists on this device
+        PORT_PATH="/sys/class/infiniband/${device_name}/ports/${PORT_NUMBER}"
+        if [ ! -d "$PORT_PATH" ]; then
+            echo "DEBUG: Device $device_name - Port $PORT_NUMBER does not exist"
+            continue
+        fi
+        
+        # Check if GUID exists for this port
+        GUID_PATH="${PORT_PATH}/gids/0"
+        if [ ! -f "$GUID_PATH" ]; then
+            echo "DEBUG: Device $device_name - Port $PORT_NUMBER exists but GUID not found"
+            continue
+        fi
+        
+        # Device has both port and GUID
+        MATCHING_DEVICES+=("$device_name")
+        echo "DEBUG: Device $device_name - Port $PORT_NUMBER with GUID found"
+    done
+    
+    # Analyze matching results
+    if [ ${#MATCHING_DEVICES[@]} -eq 0 ]; then
+        echo "ERROR: MULTI-DEVICE MODE: Port $PORT_NUMBER not found on any device (or no GUID available)"
+        echo "ERROR: MULTI-DEVICE MODE: Available devices and their ports:"
         for mlx_device in /sys/class/infiniband/mlx5_*; do
             [ -e "$mlx_device" ] || continue
             device_name=$(basename "$mlx_device")
-            pci_address=$(basename "$(readlink -f "/sys/class/infiniband/$device_name/device" 2>/dev/null)")
-            if [ -n "$pci_address" ]; then
-                pci_slot=$(echo "$pci_address" | cut -d: -f2 | sed 's/^0*//')
-                echo "  - $device_name: PCI $pci_address (slot $pci_slot)"
+            echo "  - $device_name:"
+            if [ -d "/sys/class/infiniband/${device_name}/ports" ]; then
+                ls /sys/class/infiniband/${device_name}/ports/ 2>/dev/null | sed 's/^/      Port: /'
             else
-                echo "  - $device_name: PCI information not available"
+                echo "      No ports directory found"
             fi
         done
         exit 1
-    fi
-    
-    echo "INFO: MULTI-DEVICE MODE: Looking for device matching slot '$SLOT_NUMBER'"
-    MLX5_DEVICE=$(find_device_by_slot "$SLOT_NUMBER")
-    
-    if [ -z "$MLX5_DEVICE" ]; then
-        echo "ERROR: MULTI-DEVICE MODE: Found $MLX5_DEVICE_COUNT active mlx5 devices but none match slot '$SLOT_NUMBER'"
-        echo "ERROR: MULTI-DEVICE MODE: Slot '$SLOT_NUMBER' from PXE mapping doesn't match any hardware PCI slot"
-        echo "ERROR: MULTI-DEVICE MODE: Available mlx5 devices with their PCI slots:"
-        for mlx_device in /sys/class/infiniband/mlx5_*; do
-            [ -e "$mlx_device" ] || continue
-            device_name=$(basename "$mlx_device")
-            pci_address=$(basename "$(readlink -f "/sys/class/infiniband/$device_name/device" 2>/dev/null)")
-            if [ -n "$pci_address" ]; then
-                pci_slot=$(echo "$pci_address" | cut -d: -f2 | sed 's/^0*//')
-                echo "  - $device_name: PCI $pci_address (slot $pci_slot)"
-            else
-                echo "  - $device_name: PCI information not available"
-            fi
-        done
-        echo "ERROR: MULTI-DEVICE MODE: Please update PXE mapping file with correct PCI slot numbers"
-        echo "ERROR: MULTI-DEVICE MODE: Use format: 'InfiniBand.PCIe.Slot.<correct_slot>-<port>'"
+    elif [ ${#MATCHING_DEVICES[@]} -gt 1 ]; then
+        echo "ERROR: MULTI-DEVICE MODE: Port $PORT_NUMBER found on multiple devices"
+        echo "ERROR: MULTI-DEVICE MODE: Matching devices: ${MATCHING_DEVICES[*]}"
+        echo "ERROR: MULTI-DEVICE MODE: Cannot determine which device to use"
+        echo "ERROR: MULTI-DEVICE MODE: Please update PXE mapping to specify device uniquely"
         exit 1
     fi
     
-    echo "SUCCESS: MULTI-DEVICE MODE: Slot '$SLOT_NUMBER' matches device '$MLX5_DEVICE'"
-    echo "SUCCESS: MULTI-DEVICE MODE: Slot-based device selection completed successfully"
+    # Use the single matching device
+    MLX5_DEVICE="${MATCHING_DEVICES[0]}"
+    echo "SUCCESS: MULTI-DEVICE MODE: Selected device '$MLX5_DEVICE' (only device with port $PORT_NUMBER and valid GUID)"
 fi
 
 echo "INFO: FINAL DEVICE SELECTION: Using mlx5 device '$MLX5_DEVICE'"
