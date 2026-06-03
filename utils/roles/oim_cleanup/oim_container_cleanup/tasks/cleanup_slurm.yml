@@ -35,9 +35,14 @@
           'cluster_name': cluster_item.cluster_name,
           'nfs_storage': cluster_item.nfs_storage_name,
           'vast_storage': cluster_item.vast_storage_name | default(cluster_item.nfs_storage_name),
-          'nfs_mount_point': (mounts | selectattr('name', 'equalto', cluster_item.nfs_storage_name) | first | default({})).mount_point,
-          'vast_mount_point': (mounts | selectattr('name', 'equalto', cluster_item.vast_storage_name | default(cluster_item.nfs_storage_name)) | first | default({})).mount_point,
-          'has_separate_vast': cluster_item.vast_storage_name is defined and cluster_item.vast_storage_name and cluster_item.vast_storage_name != cluster_item.nfs_storage_name
+          'nfs_mount_point': (mounts | selectattr('name', 'equalto', cluster_item.nfs_storage_name)
+                              | first | default({})).mount_point,
+          'vast_mount_point': (mounts | selectattr('name', 'equalto',
+                               cluster_item.vast_storage_name | default(cluster_item.nfs_storage_name))
+                               | first | default({})).mount_point,
+          'has_separate_vast': cluster_item.vast_storage_name is defined
+                               and cluster_item.vast_storage_name
+                               and cluster_item.vast_storage_name != cluster_item.nfs_storage_name
         }
       ] }}
   loop: "{{ slurm_cluster }}"
@@ -56,9 +61,12 @@
           'mount_point': item.nfs_mount_point,
           'storage_name': item.nfs_storage,
           'dir_type': 'nfs',
-          'directories': ['slurm', 'ctld_track', 'openldap', 'slurm_backups'] + (['apps', 'scratch', 'projects', 'slurm/hpc_tools'] if not item.has_separate_vast else [])
+          'directories': ['slurm', 'ctld_track', 'openldap', 'slurm_backups']
+                          + (['apps', 'scratch', 'projects', 'slurm/hpc_tools']
+                             if not item.has_separate_vast else [])
         }
-      ] if item.nfs_mount_point not in unique_storage_mounts | map(attribute='mount_point') | list else unique_storage_mounts }}
+      ] if item.nfs_mount_point not in unique_storage_mounts
+         | map(attribute='mount_point') | list else unique_storage_mounts }}
   loop: "{{ cleanup_storage_list }}"
   loop_control:
     label: "{{ item.cluster_name }}"
@@ -131,6 +139,12 @@
           {% endfor %}
           {% endfor %}
 
+          CRITICAL WARNING: Deleting NFS shared data will affect ALL nodes!
+          - Ensure Slurm services are stopped on all compute nodes
+          - Ensure compute nodes are not accessing these directories
+          - This may cause stale file handles on running nodes
+          - Only proceed if you understand the impact on your cluster
+
           Note: slurm_backups directories will be preserved.
           If you need Slurm configuration backup, use the separate utility:
           ansible-playbook utils/slurm_config_util.yml --tags config_backup
@@ -140,7 +154,7 @@
 
     - name: Prompt for slurm cleanup confirmation
       ansible.builtin.pause:
-        prompt: "This will delete Slurm-related directories from {{ unique_storage_mounts | length }} storage mount(s). Type {{ slurm_cleanup_confirm_token }} to continue"
+        prompt: "I understand this will delete NFS data affecting all nodes. Type {{ slurm_cleanup_confirm_token }} to continue"
       register: cleanup_confirm
 
     - name: Fail if cleanup not confirmed
@@ -172,8 +186,10 @@
           Type: {{ storage.dir_type | upper }}
           {% for dir in storage.directories %}
           {% set full_path = storage.mount_point + '/' + dir %}
-          {% set dir_deleted = slurm_cleanup_result.results | selectattr('item', 'equalto', full_path) | selectattr('changed') | list %}
-          {% set dir_exists = slurm_cleanup_result.results | selectattr('item', 'equalto', full_path) | selectattr('stat', 'defined') | selectattr('stat.exists') | list %}
+          {% set dir_deleted = slurm_cleanup_result.results | selectattr('item', 'equalto', full_path)
+                             | selectattr('changed') | list %}
+          {% set dir_exists = slurm_cleanup_result.results | selectattr('item', 'equalto', full_path)
+                             | selectattr('stat', 'defined') | selectattr('stat.exists') | list %}
           {% if dir == 'slurm_backups' %}
           -> Preserved: {{ full_path }}
           {% elif dir_deleted %}

@@ -142,12 +142,19 @@
           Node IP directories: Skipped (k8s_cleanup_node_ips: false)
           {% endif %}
           {% endfor %}
+
+          CRITICAL WARNING: Deleting NFS shared data will affect ALL nodes!
+          - Ensure K8s services are stopped on all nodes
+          - Ensure nodes are not accessing these directories
+          - This may cause stale file handles on running nodes
+          - Only proceed if you understand the impact on your cluster
+
           This action is destructive and cannot be undone.
       when: k8s_cleanup_needed | default(false)
 
     - name: Prompt for k8s cleanup confirmation
       ansible.builtin.pause:
-        prompt: "This will delete K8s-related directories from {{ k8s_storage_mounts | length }} storage mount(s). Type {{ k8s_cleanup_confirm_token }} to continue"
+        prompt: "I understand this will delete NFS data affecting all nodes. Type {{ k8s_cleanup_confirm_token }} to continue"
       register: k8s_cleanup_confirm
 
     - name: Fail if cleanup not confirmed
