@@ -162,6 +162,7 @@
                     }) | to_nice_yaml }}
             dest: "{{ rollback_manifest_path }}"
             mode: '0644'
+          delegate_to: localhost
 
         - name: End play
           ansible.builtin.meta: end_play
