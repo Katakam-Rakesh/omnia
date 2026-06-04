@@ -62,7 +62,7 @@
 - name: Validate gitlab_host IP format if provided
   ansible.builtin.assert:
     that:
-      - gitlab_host == "" or (gitlab_host | ansible.utils.ipaddr | bool)
+      - gitlab_host == "" or (gitlab_host | ansible.utils.ipaddr != false)
     fail_msg: "gitlab_host '{{ gitlab_host }}' is not a valid IP address"
     success_msg: "gitlab_host is valid"
   when: gitlab_host != ""
