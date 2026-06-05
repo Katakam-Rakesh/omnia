@@ -36,10 +36,10 @@
   ansible.builtin.set_fact:
     slurm_nfs: "{{ storage_config.mounts | selectattr('name', 'in', filter_slurm_nfs) | list }}"
 
-- name: Vast storage not supported during upgrade
-  ansible.builtin.fail:
-    msg: "Vast storage is not supported during upgrade. Please remove the 'vast_storage_name' from the slurm_cluster configuration in omnia_config.yml."
-  when: "'vast_storage_name' in omnia_config.slurm_cluster[0]"
+# - name: Vast storage not supported during upgrade
+#   ansible.builtin.fail:
+#     msg: "Vast storage is not supported during upgrade. Please remove the 'vast_storage_name' from the slurm_cluster configuration in omnia_config.yml."
+#   when: "'vast_storage_name' in omnia_config.slurm_cluster[0]"
 
 # MOUNTED and READY
 - name: Install NFS client with bolt-on support
