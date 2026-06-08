@@ -131,7 +131,7 @@ def update_status_csv(csv_dir, software, overall_status,slogger):
 
 def determine_function(
     task, repo_store_path, csv_file_path, user_data, version_variables, arc,
-    user_registries, docker_username, docker_password
+    user_registries, docker_username, docker_secret_token
 ):
     """
     Determines the appropriate function and its arguments to process a given task.
@@ -211,7 +211,7 @@ def determine_function(
         if task_type == "image":
             return process_image, [
                 task, status_file, version_variables, user_registries,
-                docker_username, docker_password
+                docker_username, docker_secret_token
             ]
         if task_type == "rpm_file":
             return process_rpm_file, [
