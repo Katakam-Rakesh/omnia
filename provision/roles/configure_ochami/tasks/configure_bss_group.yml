@@ -100,6 +100,64 @@
     - _s3_lines | select('search', 'vmlinuz') | select('search', _kvo) | list | length > 0
     - _s3_lines | select('search', 'initramfs') | select('search', _kvo) | list | length > 0
 
+- name: Retry S3 search without OS version filter (build stream - kernel override cross-version)
+  ansible.builtin.shell: |
+    set -o pipefail && \
+    s3cmd ls -Hr s3://boot-images | \
+    grep "{{ image_search_pattern }}{{ compute_image_suffix }}" | sort -k1,2r | awk '{print $4}' | sed 's|s3://||'
+  changed_when: false
+  failed_when: false
+  register: verify_s3_image_bs_retry
+  when:
+    - enable_build_stream | default(false)
+    - (compute_image_suffix | default('')) != ''
+    - hostvars['localhost']['kernel_version_override'] | default('') | length > 0
+    - kernel | default('') | length < 1 or initrd | default('') | length < 1
+
+- name: Set kernel and initrd from retry results (build stream - kernel override cross-version)
+  vars:
+    _kvo: "{{ hostvars['localhost']['kernel_version_override'] }}"
+    _bs_lines: "{{ verify_s3_image_bs_retry.stdout_lines }}"
+  ansible.builtin.set_fact:
+    kernel: "{{ _bs_lines | select('search', 'vmlinuz') | select('search', _kvo) | list | first }}"
+    initrd: "{{ _bs_lines | select('search', 'initramfs') | select('search', _kvo) | list | first }}"
+  when:
+    - enable_build_stream | default(false)
+    - (compute_image_suffix | default('')) != ''
+    - hostvars['localhost']['kernel_version_override'] | default('') | length > 0
+    - kernel | default('') | length < 1 or initrd | default('') | length < 1
+    - verify_s3_image_bs_retry.stdout_lines | default([]) | length > 1
+    - _bs_lines | select('search', 'vmlinuz') | select('search', _kvo) | list | length > 0
+    - _bs_lines | select('search', 'initramfs') | select('search', _kvo) | list | length > 0
+
+- name: Retry S3 search without OS version filter (default - kernel override cross-version)
+  ansible.builtin.shell: |
+    set -o pipefail && \
+    s3cmd ls -Hr s3://boot-images | \
+    grep "{{ image_search_pattern }}" | sort -k1,2r | awk '{print $4}' | sed 's|s3://||'
+  changed_when: false
+  failed_when: false
+  register: verify_s3_image_retry
+  when:
+    - not enable_build_stream
+    - hostvars['localhost']['kernel_version_override'] | default('') | length > 0
+    - kernel | default('') | length < 1 or initrd | default('') | length < 1
+
+- name: Set kernel and initrd from retry results (default - kernel override cross-version)
+  vars:
+    _kvo: "{{ hostvars['localhost']['kernel_version_override'] }}"
+    _s3_lines: "{{ verify_s3_image_retry.stdout_lines }}"
+  ansible.builtin.set_fact:
+    kernel: "{{ _s3_lines | select('search', 'vmlinuz') | select('search', _kvo) | list | first }}"
+    initrd: "{{ _s3_lines | select('search', 'initramfs') | select('search', _kvo) | list | first }}"
+  when:
+    - not enable_build_stream
+    - hostvars['localhost']['kernel_version_override'] | default('') | length > 0
+    - kernel | default('') | length < 1 or initrd | default('') | length < 1
+    - verify_s3_image_retry.stdout_lines | default([]) | length > 1
+    - _s3_lines | select('search', 'vmlinuz') | select('search', _kvo) | list | length > 0
+    - _s3_lines | select('search', 'initramfs') | select('search', _kvo) | list | length > 0
+
 - name: Load bss template - {{ functional_group_name }}
   ansible.builtin.template:
     src: "{{ bss_template }}"
