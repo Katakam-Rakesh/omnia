@@ -1035,7 +1035,7 @@ def _build_pip_platform_args(target_python, arc, logger):
     platforms = ARCH_PIP_PLATFORMS.get(arc, [])
     parts = [
         f"--python-version {target_python}",
-        f"--implementation cp",
+        "--implementation cp",
         f"--abi {abi}",
         "--only-binary=:all:",
     ]
@@ -1066,6 +1066,9 @@ def process_pip(package, status_file_path, content_base_dir, repo_name,
     Returns:
         str: "Success" if the process is successful, otherwise "Failed".
     """
+    if logger is None:
+        import logging
+        logger = logging.getLogger(__name__)
     logger.info("#" * 30 + f" {process_pip.__name__} start " + "#" * 30)
     status = "Success"  # Default status, updated if any step fails
 
@@ -1110,7 +1113,7 @@ def process_pip(package, status_file_path, content_base_dir, repo_name,
             download_command = f"pip download {dest_flag} {pkg_spec}"
             if not execute_command(download_command, logger):
                 status = "Failed"
-                logger.error(f"Failed to download {package_name}. Aborting process.")
+                logger.error(f"Failed to download {pkg_spec}. Aborting process.")
                 return status  # Stop further steps
 
         # Step 2: Create the Pulp repository if it does not exist
