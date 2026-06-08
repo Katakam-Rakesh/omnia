@@ -67,6 +67,7 @@
   ansible.builtin.set_fact:
     kernel: ""
     initrd: ""
+    validated_images: "{}"
 
 - name: Set kernel and initrd variables
   ansible.builtin.set_fact:
@@ -114,6 +115,15 @@
     - verify_s3_image_retry.stdout_lines | default([]) | length > 1
     - _s3_lines | select('search', 'vmlinuz') | select('search', _kvo) | list | length > 0
     - _s3_lines | select('search', 'initramfs') | select('search', _kvo) | list | length > 0
+
+- name: Store validated kernel and initrd for functional group
+  ansible.builtin.set_fact:
+    validated_images: >-
+      {{ validated_images | default({}) | combine({
+           functional_group_name: {'kernel': kernel, 'initrd': initrd}
+         })
+      }}
+  when: kernel | length > 0 and initrd | length > 0
 
 - name: Fail if kernel override did not match any S3 image
   ansible.builtin.fail:
