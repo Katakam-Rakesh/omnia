@@ -67,7 +67,7 @@
   ansible.builtin.set_fact:
     kernel: ""
     initrd: ""
-    validated_images: "{}"
+    validated_images: "{{ validated_images | default({}) }}"
 
 - name: Set kernel and initrd variables
   ansible.builtin.set_fact:
