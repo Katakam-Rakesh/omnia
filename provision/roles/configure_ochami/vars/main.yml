@@ -152,3 +152,6 @@ ochami_discovery_failed_msg: |
   4. Check ochami CLI: /usr/bin/ochami smd service status
   5. Restart openchami.target: systemctl restart openchami.target
   6. Rerun provision.yml: ansible-playbook provision/provision.yml
+
+# templates/hpc_tools/install_cuda_driver.sh.j2 - add a hyphen so that empty will also work for latest
+cuda_driver_version: "-3:580.159.04-1.el10"
