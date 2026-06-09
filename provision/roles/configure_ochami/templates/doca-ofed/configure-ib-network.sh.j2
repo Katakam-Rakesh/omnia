@@ -169,7 +169,7 @@ fi
 # SLOT-BASED DEVICE SELECTION (Integrated Logic)
 # ==============================
 echo "============================================="
-echo "🔍 SLOT-BASED IB DEVICE SELECTION"
+echo "SLOT-BASED IB DEVICE SELECTION"
 echo "============================================="
 echo "INFO: Target Slot=$SLOT_NUMBER Port=$PORT_NUMBER IP=$IB_IP/$NETMASK_BITS"
 echo
@@ -229,7 +229,7 @@ for device_name in "${IB_DEVICES[@]:-}"; do
     echo "DEBUG: $device_name → PCI $dev_pci (slot reports $PCI_ADDR)"
     if [[ "$dev_pci" == "$PCI_ADDR" ]]; then
         SELECTED_DEVICE="$device_name"
-        echo "✅ FULL PCI MATCH → $SELECTED_DEVICE"
+        echo " FULL PCI MATCH → $SELECTED_DEVICE"
         break
     fi
 done
@@ -246,7 +246,7 @@ if [ -z "$SELECTED_DEVICE" ]; then
         dev_bd=$(echo "$dev_pci" | cut -d. -f1)
         if [[ "$dev_bd" == "$TARGET_BD" ]]; then
             SELECTED_DEVICE="$device_name"
-            echo "✅ BUS:DEVICE MATCH → $SELECTED_DEVICE"
+            echo " BUS:DEVICE MATCH → $SELECTED_DEVICE"
             break
         fi
     done
@@ -301,7 +301,7 @@ echo "SUCCESS: Interface found → $IB_INTERFACE"
 echo
 
 echo "============================================="
-echo "✅ IB DEVICE SELECTION SUCCESS"
+echo " IB DEVICE SELECTION SUCCESS"
 echo "Slot         : $SLOT_NUMBER"
 echo "Port         : $PORT_NUMBER"
 echo "PCI Address  : $PCI_ADDR"
