@@ -70,6 +70,8 @@
   community.general.read_csv:
     path: "{{ hostvars['localhost']['pxe_mapping_file_path'] }}"
   register: pxe_data_for_cidr
+  delegate_to: localhost
+  run_once: true
 
 - name: Determine Calico CIDR from control plane nodes subnet
   ansible.builtin.set_fact:
