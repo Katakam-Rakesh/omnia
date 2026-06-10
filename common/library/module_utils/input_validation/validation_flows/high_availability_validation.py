@@ -398,8 +398,8 @@ def validate_vip_address(
         # Check VIP doesn't conflict with any HOST_IP in PXE mapping
         validate_vip_vs_pxe_mapping_host_ips(errors, config_type, vip_address, pxe_mapping_file_path)
         
-        # Check all HOST_IPs are in same subnet as VIP
-        validate_all_host_ips_same_subnet_as_vip(errors, vip_address, pxe_mapping_file_path, admin_netmaskbits, additional_subnets)
+        # Check all HOST_IPs are in a known subnet
+        validate_all_host_ips_same_subnet_as_vip(errors, vip_address, pxe_mapping_file_path, admin_netmaskbits, additional_subnets, oim_admin_ip)
 
 def validate_service_k8s_cluster_ha(
     errors,
