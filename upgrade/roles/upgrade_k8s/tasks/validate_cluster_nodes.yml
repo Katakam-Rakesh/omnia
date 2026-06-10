@@ -333,9 +333,14 @@
   loop_control:
     label: "{{ item.split('|')[0] }}"
 
+- name: Convert not-ready IPs to hostnames
+  ansible.builtin.set_fact:
+    nodes_not_ready_hostnames: >-
+      {{ nodes_not_ready | default([]) | map('extract', ip_to_hostname) | select('defined') | list }}
+
 - name: Filter not-ready nodes to only validated nodes
   ansible.builtin.set_fact:
-    validated_nodes_not_ready: "{{ nodes_not_ready | default([]) | intersect(all_validated_nodes) }}"
+    validated_nodes_not_ready: "{{ nodes_not_ready_hostnames | intersect(all_validated_nodes) }}"
 
 - name: Display node Ready status results
   ansible.builtin.debug:
