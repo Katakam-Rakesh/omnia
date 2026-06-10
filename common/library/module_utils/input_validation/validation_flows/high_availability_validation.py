@@ -365,11 +365,15 @@ def validate_vip_address(
         )
 
     # validate virtual_ip_address is in the expected subnet
-    # If control plane subnet info is provided, validate VIP against that subnet;
-    # otherwise fall back to the primary admin subnet.
-    subnet_ref_ip = kcp_subnet_ip if kcp_subnet_ip else oim_admin_ip
-    subnet_ref_bits = kcp_subnet_bits if kcp_subnet_bits else admin_netmaskbits
-    if not validation_utils.is_ip_in_subnet(subnet_ref_ip, subnet_ref_bits, vip_address):
+    # VIP is valid if it is in the primary admin subnet OR the control plane
+    # nodes' subnet (which may be an additional subnet).
+    in_admin_subnet = validation_utils.is_ip_in_subnet(
+        oim_admin_ip, admin_netmaskbits, vip_address)
+    in_kcp_subnet = False
+    if kcp_subnet_ip and kcp_subnet_bits:
+        in_kcp_subnet = validation_utils.is_ip_in_subnet(
+            kcp_subnet_ip, kcp_subnet_bits, vip_address)
+    if not in_admin_subnet and not in_kcp_subnet:
         errors.append(
             create_error_msg(
                 f"{config_type} virtual_ip_address",
@@ -399,7 +403,7 @@ def validate_vip_address(
         validate_vip_vs_pxe_mapping_host_ips(errors, config_type, vip_address, pxe_mapping_file_path)
         
         # Check all HOST_IPs are in same subnet as VIP
-        validate_all_host_ips_same_subnet_as_vip(errors, vip_address, pxe_mapping_file_path, admin_netmaskbits, additional_subnets)
+        validate_all_host_ips_same_subnet_as_vip(errors, vip_address, pxe_mapping_file_path, admin_netmaskbits, additional_subnets, oim_admin_ip)
 
 def validate_service_k8s_cluster_ha(
     errors,
