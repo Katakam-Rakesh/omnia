@@ -1292,8 +1292,8 @@
           "aarch64"
         ],
         "Type": "image",
-        "Tag": "1.1",
-        "Version": "1.1"
+        "Tag": "1.2",
+        "Version": "1.2"
       },
       "docker.io/dellhpcomniaaisolution/image-build-el10": {
         "Name": "docker.io/dellhpcomniaaisolution/image-build-el10",
