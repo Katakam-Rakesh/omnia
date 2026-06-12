@@ -1012,8 +1012,8 @@
           "x86_64"
         ],
         "Type": "image",
-        "Tag": "0.143.1",
-        "Version": "0.143.1"
+        "Tag": "0.150.1",
+        "Version": "0.150.1"
       },
       "git": {
         "Name": "git",
@@ -1065,7 +1065,7 @@
           "x86_64"
         ],
         "Type": "git",
-        "Version": "container-storage-modules-1.9.2",
+        "Version": "container-storage-modules-1.10.0",
         "Sources": [
           {
             "Architecture": "x86_64",
@@ -1123,7 +1123,7 @@
           "x86_64"
         ],
         "Type": "git",
-        "Version": "v1.12.0",
+        "Version": "v1.15.0",
         "Sources": [
           {
             "Architecture": "x86_64",
@@ -1647,8 +1647,8 @@
           "x86_64"
         ],
         "Type": "image",
-        "Tag": "v1.11.0",
-        "Version": "v1.11.0"
+        "Tag": "v1.12.0",
+        "Version": "v1.12.0"
       },
       "quay.io/jetstack/cert-manager-acmesolver": {
         "Name": "quay.io/jetstack/cert-manager-acmesolver",
