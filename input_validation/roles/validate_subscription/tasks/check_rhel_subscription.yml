@@ -124,11 +124,13 @@
       failed_when: false
 
     - name: Extract EUS baseurls (appstream, baseos, codeready-builder)
+      vars:
+        eus_pattern: "rhel-{{ rhel_version }}-for-x86_64-(appstream|baseos)-eus-rpms|codeready-builder-for-rhel-{{ rhel_version }}-x86_64-eus-rpms"
       ansible.builtin.shell: |
         set -o pipefail
         awk '
           /^\[/ {section=$0}
-          /^baseurl/ && section ~ /(rhel-{{ rhel_version }}-for-x86_64-(appstream|baseos)-eus-rpms|codeready-builder-for-rhel-{{ rhel_version }}-x86_64-eus-rpms)/ {
+          /^baseurl/ && section ~ /({{ eus_pattern }})/ {
             gsub(/\$releasever/, "{{ hostvars['localhost']['cluster_os_version'] }}", $3)
             print $3
           }
@@ -138,11 +140,13 @@
       failed_when: false
 
     - name: Extract standard baseurls if EUS not found
+      vars:
+        std_pattern: "rhel-{{ rhel_version }}-for-x86_64-(appstream|baseos)-rpms|codeready-builder-for-rhel-{{ rhel_version }}-x86_64-rpms"
       ansible.builtin.shell: |
         set -o pipefail
         awk '
           /^\[/ {section=$0}
-          /^baseurl/ && section ~ /(rhel-{{ rhel_version }}-for-x86_64-(appstream|baseos)-rpms|codeready-builder-for-rhel-{{ rhel_version }}-x86_64-rpms)/ {
+          /^baseurl/ && section ~ /({{ std_pattern }})/ {
             gsub(/\$releasever/, "{{ hostvars['localhost']['cluster_os_version'] }}", $3)
             print $3
           }
@@ -153,9 +157,11 @@
 
     - name: Set fact repo baseurls (EUS preferred, fallback to standard)
       ansible.builtin.set_fact:
-        repo_baseurls: "{{ (eus_baseurls.stdout_lines if (eus_baseurls.stdout_lines | default([]) | length > 0) else standard_baseurls.stdout_lines | default([]))
-                          | map('regex_replace', '([^/])$', '\\1/')
-                          | list }}"
+        repo_baseurls: >-
+          {{ (eus_baseurls.stdout_lines if (eus_baseurls.stdout_lines | default([]) | length > 0)
+              else standard_baseurls.stdout_lines | default([]))
+              | map('regex_replace', '([^/])$', '\1/')
+              | list }}
 
     - name: Show extracted baseurls
       ansible.builtin.debug:
