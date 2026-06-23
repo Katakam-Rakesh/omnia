@@ -195,7 +195,10 @@
           K8s-related cleanup completed.
           {% for mount in k8s_storage_mounts %}
           Storage: {{ mount.name }} ({{ mount.mount_point }})
-          {% set mount_deleted = k8s_cleanup_result.results | selectattr('item', 'search', '^' + mount.mount_point) | selectattr('changed') | list %}
+          {% set mount_deleted = k8s_cleanup_result.results |
+                                selectattr('item', 'search', '^' + mount.mount_point) |
+                                selectattr('changed') |
+                                list %}
           {% if mount_deleted %}
           {% for item in mount_deleted %}
           -> Deleted directory: {{ item.item }}
@@ -203,7 +206,10 @@
           {% else %}
           -> No directories deleted from this storage
           {% endif %}
-          {% set mount_files_deleted = k8s_files_cleanup_result.results | selectattr('item', 'search', '^' + mount.mount_point) | selectattr('changed') | list %}
+          {% set mount_files_deleted = k8s_files_cleanup_result.results |
+                                     selectattr('item', 'search', '^' + mount.mount_point) |
+                                     selectattr('changed') |
+                                     list %}
           {% if mount_files_deleted %}
           {% for item in mount_files_deleted %}
           -> Deleted file: {{ item.item }}
