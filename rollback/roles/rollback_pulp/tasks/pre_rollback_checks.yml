@@ -73,7 +73,7 @@
     # ── Check if already at rollback target version ───────────────────────
     - name: Check if Pulp is already at rollback target version
       ansible.builtin.set_fact:
-        pulp_already_rolled_back: "{{ pulp_rollback_image in (pulp_current_image | default('')) }}"
+        pulp_already_rolled_back: "{{ pulp_rollback_image in ((pulp_current_image | default('')) | string) }}"
       when: pulp_deployed
 
     - name: Display skip message if already at target version

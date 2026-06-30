@@ -64,7 +64,7 @@
 
 - name: Check if Pulp is already at target version
   ansible.builtin.set_fact:
-    pulp_upgrade_needed: "{{ pulp_target_image not in (pulp_current_image | default('')) }}"
+    pulp_upgrade_needed: "{{ pulp_target_image not in ((pulp_current_image | default('')) | string) }}"
   when: pulp_deployed
 
 - name: Display skip message if already at target version

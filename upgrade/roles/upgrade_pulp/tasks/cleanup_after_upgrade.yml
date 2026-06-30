@@ -40,6 +40,7 @@
 
 - name: Report disk usage after upgrade
   ansible.builtin.shell: |
+    set -o pipefail
     echo "Pulp storage: $(du -sh {{ oim_host_pulp_data_base }}/pulp_storage 2>/dev/null | cut -f1)"
     echo "PostgreSQL:   $(du -sh {{ oim_host_pgsql_path }} 2>/dev/null | cut -f1)"
     echo "Backup:       $(du -sh {{ oim_host_backup_dir }} 2>/dev/null | cut -f1)"
