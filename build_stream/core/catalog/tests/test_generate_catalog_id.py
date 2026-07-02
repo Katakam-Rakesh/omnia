@@ -109,7 +109,7 @@ class TestGenerateHumanReadableId(unittest.TestCase):
         )
         self.assertEqual(
             _generate_human_readable_id(
-                "strimzi-kafka-operator-helm-3-chart-1-0-1", "tarball", None,
+                "strimzi-kafka-operator-helm-3-chart-1-1-0", "tarball", None,
                 self.used_ids
             ),
             "strimzi-kafka-operator-helm-3-chart"
