@@ -1504,7 +1504,7 @@ def validate_k8s(data, admin_networks, softwares, ha_config, tag_names, errors,
                             create_error_msg(
                                 f"Cluster - {cluster_name} - nfs_storage_name not mounted on OIM",
                                 k8s_nfs,
-                                f"{k8s_nfs} should be mounted on oim for k8s operations"
+                                f"Mount {k8s_nfs} - mount_on_oim should be true for k8s operations"
                             ))
                 if cluster_name not in ha_config.get(k8s_cluster_type+"_ha", []):
                     errors.append(
