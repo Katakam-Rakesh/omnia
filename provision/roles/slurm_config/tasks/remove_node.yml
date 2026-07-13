@@ -96,7 +96,7 @@
   when:
     - updated_merged_results is defined
 
-# This should be done by provision_validation role
+# TODO: This should be done by provision_validation role - idempotency
 - name: Remove entries from /etc/hosts
   ansible.builtin.shell: |
     set -o pipefail
