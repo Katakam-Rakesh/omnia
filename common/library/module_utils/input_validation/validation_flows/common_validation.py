@@ -1490,7 +1490,7 @@ def validate_k8s(data, admin_networks, softwares, ha_config, tag_names, errors,
                             f"nfs_storage_name not found in service_k8s_cluster {cluster_name}"
                         )
                     )
-                if k8s_nfs not in nfs_names:
+                elif k8s_nfs not in nfs_names:
                     errors.append(
                         create_error_msg(
                             f"Cluster - {cluster_name} - nfs_storage_name not found",
@@ -1502,7 +1502,7 @@ def validate_k8s(data, admin_networks, softwares, ha_config, tag_names, errors,
                     if not k8s_mnt.get('mount_on_oim'):
                         errors.append(
                             create_error_msg(
-                                f"Cluster - {cluster_name} - nfs_storage_name not mounted on OIM",
+                                f"storage_config.yml->mounts[{k8s_nfs}] - nfs_storage_name not mounted on OIM",
                                 k8s_nfs,
                                 f"Mount {k8s_nfs} - mount_on_oim should be true for k8s operations"
                             ))
@@ -1656,10 +1656,10 @@ def validate_omnia_config(
             if not slurm_mnt.get('mount_on_oim'):
                 errors.append(
                     create_error_msg(
-                        input_file_path,
-                        "slurm NFS should be mounted on OIM",
-                        f"NFS name {slurm_mnt.get('name')} - mount_on_oim should be true for slurm operations"
-                        ))
+                        f"storage_config.yml->mounts[{slurm_mnt.get('name')}] - nfs_storage_name not mounted on OIM",
+                        slurm_mnt.get('name'),
+                        f"Mount {slurm_mnt.get('name')} - mount_on_oim should be true for slurm operations"
+                    ))
             # mnt.functional_group_prefix validation
 
         # Validate vast_storage_name if provided
