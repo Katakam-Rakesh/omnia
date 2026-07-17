@@ -94,53 +94,63 @@
   ansible.builtin.set_fact:
     filtered_bmc_ip_dict_list: "{{ filtered_bmc_ip_list | map('community.general.dict_kv', 'bmc_ip') | list }}"
 
-# Pick the first worker node to run BMC validation from.
-# The play runs on control plane which cannot reach BMC subnets,
-# so we delegate validation to a worker node that has network access.
-- name: Get first worker node for BMC validation
+# Build list of all worker node management IPs for BMC validation.
+# The play runs on control plane (via kube-vip) which cannot reach BMC subnets,
+# so we delegate validation to worker nodes that have network access.
+# If any BMCs are unreachable from the first worker, retry from the next.
+- name: Get all worker node IPs for BMC validation
   ansible.builtin.set_fact:
-    worker_node: "{{ groups['service_kube_node_x86_64'][0] }}"
-  when: groups['service_kube_node_x86_64'] is defined and (groups['service_kube_node_x86_64'] | length > 0)
+    worker_node_list: >-
+      {{ hostvars['localhost']['nodes']
+         | selectattr('group', 'match', '^service_kube_node')
+         | map(attribute='interfaces')
+         | map('first')
+         | map(attribute='ip_addrs')
+         | map('selectattr', 'name', 'equalto', 'management')
+         | map('map', attribute='ip_addr')
+         | map('first')
+         | list }}
+  when: >
+    hostvars['localhost']['nodes'] is defined and
+    (hostvars['localhost']['nodes']
+     | selectattr('group', 'match', '^service_kube_node')
+     | list | length > 0)
 
-- name: Test BMC subnet connectivity from worker node
-  ansible.builtin.command: "ping -c 1 -W 2 {{ filtered_bmc_ip_list[0] }}"
-  register: bmc_connectivity_check
-  failed_when: false
-  ignore_errors: true
-  delegate_to: "{{ worker_node }}"
+- name: Set first worker node for BMC validation
+  ansible.builtin.set_fact:
+    worker_node: "{{ worker_node_list[0] }}"
+  when: worker_node_list | default([]) | length > 0
+
+- name: Log worker node for BMC validation
+  ansible.builtin.debug:
+    msg: >-
+      Worker node for BMC validation: {{ worker_node | default('none') }},
+      All worker nodes: {{ worker_node_list | default([]) }}
+
+# Delegate BMC validation directly to worker node.
+# No pre-flight ping check needed — the update_bmc_group_entry module
+# handles unreachable BMCs gracefully by marking them as unreachable.
+- name: Validate BMC reachability from worker node
+  ansible.builtin.include_tasks: validate_bmcips_reachability.yml
   when:
     - worker_node is defined
     - filtered_bmc_ip_list | length > 0
 
-- name: Set BMC reachability flag
-  ansible.builtin.set_fact:
-    bmc_reachable_from_worker: "{{ bmc_connectivity_check.rc | default(1) == 0 }}"
-
-- name: Log BMC reachability status
-  ansible.builtin.debug:
-    msg: >-
-      BMC reachability from worker {{ worker_node | default('none') }}: {{ bmc_reachable_from_worker | default(false) }}
-
-# Run validation from first worker node
-- name: Validate BMC reachability from worker node
-  ansible.builtin.include_tasks: validate_bmcips_reachability.yml
+# If there are unreachable BMCs and a second worker node is available,
+# retry those BMCs from the second worker node.
+- name: Retry unreachable BMCs from second worker node
   when:
-    - bmc_reachable_from_worker | default(false) | bool
-    - filtered_bmc_ip_list | length > 0
+    - idrac_unreachable | default([]) | length > 0
+    - worker_node_list | default([]) | length > 1
+  block:
+    - name: Build retry BMC list from unreachable IPs
+      ansible.builtin.set_fact:
+        retry_bmc_ip_list: "{{ idrac_unreachable }}"
+        retry_bmc_ip_dict_list: "{{ idrac_unreachable | map('community.general.dict_kv', 'bmc_ip') | list }}"
+        retry_worker_node: "{{ worker_node_list[1] }}"
 
-# If worker cannot reach BMC subnet, fall back to no validation
-- name: Set default telemetry variables (validation skipped - no BMC reachable)
-  ansible.builtin.set_fact:
-    telemetry_idrac: "{{ filtered_bmc_ip_list }}"
-    telemetry_idrac_count: "{{ filtered_bmc_ip_list | length }}"
-    failed_idrac_count: 0
-    failed_idrac: []
-    idrac_redfish_disabled: []
-    idrac_invalid_creds: []
-    idrac_unreachable: []
-    invalid_idrac_count: 0
-    invalid_idrac_list: []
-  when: not (bmc_reachable_from_worker | default(false) | bool)
+    - name: Retry unreachable BMCs from second worker node
+      ansible.builtin.include_tasks: retry_unreachable_bmcs.yml
 
 - name: Add iDRAC details in mysqldb
   when: telemetry_idrac is defined and (telemetry_idrac | length > 0)
