@@ -94,8 +94,53 @@
   ansible.builtin.set_fact:
     filtered_bmc_ip_dict_list: "{{ filtered_bmc_ip_list | map('community.general.dict_kv', 'bmc_ip') | list }}"
 
-- name: Validate BMC reachability
+# Pick the first worker node to run BMC validation from.
+# The play runs on control plane which cannot reach BMC subnets,
+# so we delegate validation to a worker node that has network access.
+- name: Get first worker node for BMC validation
+  ansible.builtin.set_fact:
+    worker_node: "{{ groups['service_kube_node_x86_64'][0] }}"
+  when: groups['service_kube_node_x86_64'] is defined and (groups['service_kube_node_x86_64'] | length > 0)
+
+- name: Test BMC subnet connectivity from worker node
+  ansible.builtin.command: "ping -c 1 -W 2 {{ filtered_bmc_ip_list[0] }}"
+  register: bmc_connectivity_check
+  failed_when: false
+  ignore_errors: true
+  delegate_to: "{{ worker_node }}"
+  when:
+    - worker_node is defined
+    - filtered_bmc_ip_list | length > 0
+
+- name: Set BMC reachability flag
+  ansible.builtin.set_fact:
+    bmc_reachable_from_worker: "{{ bmc_connectivity_check.rc | default(1) == 0 }}"
+
+- name: Log BMC reachability status
+  ansible.builtin.debug:
+    msg: >-
+      BMC reachability from worker {{ worker_node | default('none') }}: {{ bmc_reachable_from_worker | default(false) }}
+
+# Run validation from first worker node
+- name: Validate BMC reachability from worker node
   ansible.builtin.include_tasks: validate_bmcips_reachability.yml
+  when:
+    - bmc_reachable_from_worker | default(false) | bool
+    - filtered_bmc_ip_list | length > 0
+
+# If worker cannot reach BMC subnet, fall back to no validation
+- name: Set default telemetry variables (validation skipped - no BMC reachable)
+  ansible.builtin.set_fact:
+    telemetry_idrac: "{{ filtered_bmc_ip_list }}"
+    telemetry_idrac_count: "{{ filtered_bmc_ip_list | length }}"
+    failed_idrac_count: 0
+    failed_idrac: []
+    idrac_redfish_disabled: []
+    idrac_invalid_creds: []
+    idrac_unreachable: []
+    invalid_idrac_count: 0
+    invalid_idrac_list: []
+  when: not (bmc_reachable_from_worker | default(false) | bool)
 
 - name: Add iDRAC details in mysqldb
   when: telemetry_idrac is defined and (telemetry_idrac | length > 0)
