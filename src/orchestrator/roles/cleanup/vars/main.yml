@@ -76,6 +76,9 @@ functional_groups_config: >-
   {{ orchestrator_output_dir }}/.data/functional_groups_config.yml
 orchestrator_state_file: "{{ orchestrator_output_dir }}/orchestrator_state.yml"
 # Centralized failure messages
+k8s_cleanup_kafka_active_pvc_fail_msg: >-
+  Kafka PVCs still exist on local storage (StorageClass 'omnia-kafka-local').
+  Run Telemetry cleanup first before removing local storage.
 k8s_storage_contract_fail_msg: >-
   K8s cleanup cannot safely resolve service_k8s_cluster[0].nfs_storage_name
   '{{ cleanup_k8s_storage_name }}' to exactly one complete mount entry in

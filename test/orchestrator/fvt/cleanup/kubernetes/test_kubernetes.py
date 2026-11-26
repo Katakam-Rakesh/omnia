@@ -17,6 +17,7 @@
 import pytest
 from library.functions import (
     TestLogger,
+    check_cleanup_kafka_local_storage,
     check_cleanup_kubernetes,
 )
 from library.vars import TEST_CASES as TC
@@ -32,3 +33,15 @@ def test_kubernetes_cleanup(host):
     tc = TC["cleanup_kubernetes"]
     test_log = TestLogger(tc["title"], tc["id"])
     verify_cleanup(test_log, host, "Kubernetes cleanup", check_cleanup_kubernetes)
+
+
+@pytest.mark.sanity
+@pytest.mark.destructive
+@pytest.mark.order(50402)
+def test_kafka_local_storage_cleanup(host):
+    """Verify Kafka local storage teardown postconditions."""
+    tc = TC["cleanup_kafka_local_storage"]
+    test_log = TestLogger(tc["title"], tc["id"])
+    verify_cleanup(
+        test_log, host, "Kafka local storage cleanup", check_cleanup_kafka_local_storage
+    )

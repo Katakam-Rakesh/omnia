@@ -521,12 +521,27 @@
   changed_when: false
   failed_when: false
 
+- name: Kafka | Check if Kafka PVs use local storage
+  ansible.builtin.command: >
+    kubectl get pv -l {{ kafka_pvc_label | quote }} --output=jsonpath={.items[*].spec.storageClassName}
+  register: _kafka_pv_storage_classes
+  changed_when: false
+  failed_when: false
+
+- name: Kafka | Set local storage flag for Kafka PVs
+  ansible.builtin.set_fact:
+    _kafka_on_local_storage: >-
+      {{
+        'omnia-kafka-local' in (_kafka_pv_storage_classes.stdout | default(''))
+      }}
+
 - name: Kafka | Get Kafka PV details for export cleanup
   ansible.builtin.command: >
     kubectl get pv -l {{ kafka_pvc_label | quote }} --output=jsonpath={.items[*].spec.csi.volumeHandle}
   register: _kafka_pv_handles
   changed_when: false
   failed_when: false
+  when: not (_kafka_on_local_storage | bool)
 
 - name: Kafka | Extract Isilon export IDs from PV handles
   ansible.builtin.set_fact:
@@ -536,7 +551,9 @@
         | regex_findall('=_=_=(\\d+)=_=_=') | default([])
         | map('regex_replace', '=_=_=', '') | map('regex_replace', '=_=_=', '') | list
       }}
-  when: _kafka_pv_handles.stdout | default('') | length > 0
+  when:
+    - not (_kafka_on_local_storage | bool)
+    - _kafka_pv_handles.stdout | default('') | length > 0
   no_log: true
 
 - name: Kafka | Get Isilon credentials from secret
@@ -545,12 +562,17 @@
   register: _isilon_creds_base64
   changed_when: false
   failed_when: false
+  when:
+    - not (_kafka_on_local_storage | bool)
+    - _kafka_export_ids | default([]) | length > 0
   no_log: true
 
 - name: Kafka | Decode Isilon credentials
   ansible.builtin.set_fact:
     _isilon_creds_decoded: "{{ _isilon_creds_base64.stdout | b64decode }}"
-  when: _isilon_creds_base64.stdout | default('') | length > 0
+  when:
+    - not (_kafka_on_local_storage | bool)
+    - _isilon_creds_base64.stdout | default('') | length > 0
   no_log: true
 
 - name: Kafka | Parse Isilon endpoint and credentials
@@ -558,7 +580,9 @@
     _isilon_endpoint: "{{ (_isilon_creds_decoded | regex_findall('endpoint:\\s+\"([^\"]+)\"') | default([]) | first | default('', true)) }}"
     _isilon_username: "{{ (_isilon_creds_decoded | regex_findall('username:\\s+\"([^\"]+)\"') | default([]) | first | default('', true)) }}"
     _isilon_password: "{{ (_isilon_creds_decoded | regex_findall('password:\\s+\"([^\"]+)\"') | default([]) | first | default('', true)) }}"
-  when: _isilon_creds_decoded | default('') | length > 0
+  when:
+    - not (_kafka_on_local_storage | bool)
+    - _isilon_creds_decoded | default('') | length > 0
   no_log: true
 
 - name: Kafka | Delete Isilon NFS exports via API
@@ -575,6 +599,7 @@
   register: _isilon_export_delete
   when:
     - not (_cleanup_preserve_sink_volumes | bool)
+    - not (_kafka_on_local_storage | bool)
     - _kafka_export_ids | default([]) | length > 0
     - _isilon_creds_decoded | default('') | length > 0
   failed_when: false
@@ -589,6 +614,7 @@
   register: _kafka_pv_patch
   when:
     - not (_cleanup_preserve_sink_volumes | bool)
+    - not (_kafka_on_local_storage | bool)
     - _kafka_pvs.stdout_lines | default([]) | length > 0
   changed_when: _kafka_pv_patch.rc == 0
   failed_when: false

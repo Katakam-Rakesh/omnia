@@ -70,6 +70,12 @@
     cleanup_k8s_nfs_source: "{{ cleanup_k8s_storage_matches[0].source }}"
   tags: k8s
 
+# Kafka Local Storage Ordering Guard and Teardown
+# Must execute BEFORE unmounting K8s storage or removing shared data
+- name: Kafka Local Storage | Run local storage teardown
+  ansible.builtin.include_tasks: "{{ role_path }}/components/k8s/tasks/cleanup_local_storage.yml"
+  tags: k8s
+
 # Shared data is removed wherever the shared filesystem is reachable locally,
 # without ever needing SSH access to the NFS server:
 #   - via the mount point, when the share is mounted (writes travel over NFS,

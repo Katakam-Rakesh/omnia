@@ -1917,6 +1917,10 @@ CLEANUP_TEST_CASES: dict[str, dict[str, str]] = {
         "id": "ORCH_FVT_CLEANUP_V004",
         "title": "Verify Kubernetes shared-data and storage cleanup",
     },
+    "cleanup_kafka_local_storage": {
+        "id": "ORCH_FVT_CLEANUP_V010",
+        "title": "Verify Kafka local storage teardown postconditions",
+    },
     "cleanup_artifacts": {
         "id": "ORCH_FVT_CLEANUP_V005",
         "title": "Verify cleanup artifacts and preserved inputs",

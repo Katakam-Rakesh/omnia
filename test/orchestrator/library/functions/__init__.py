@@ -188,6 +188,7 @@ from .dcgm_pxeboot_func import (
 from .cleanup_func import (
     check_cleanup_artifacts,
     check_cleanup_credentials,
+    check_cleanup_kafka_local_storage,
     check_cleanup_kubernetes,
     check_cleanup_openchami,
     check_cleanup_openldap,
@@ -557,6 +558,7 @@ __all__ = [
     "check_cleanup_artifacts",
     "check_cleanup_credentials",
     "check_cleanup_idempotency",
+    "check_cleanup_kafka_local_storage",
     "check_cleanup_kubernetes",
     "check_cleanup_openchami",
     "check_cleanup_openldap",

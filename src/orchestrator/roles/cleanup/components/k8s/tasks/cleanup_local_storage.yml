@@ -1,0 +1,198 @@
+# Copyright 2026 Dell Inc. or its subsidiaries. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+# Kafka Local Storage Cleanup and Teardown (ER-ORCH-011 FR-5.1, FR-5.2, AC-006)
+
+- name: Kafka Local Storage | Identify declared Kafka local storage entries
+  ansible.builtin.set_fact:
+    _cleanup_kafka_disk_entries: >-
+      {{
+        cleanup_k8s_storage_config.local_storage | default([])
+        | selectattr('purpose', 'defined')
+        | selectattr('purpose', 'equalto', 'kafka')
+        | list
+      }}
+
+- name: Kafka Local Storage | Skip when no Kafka local storage is declared
+  ansible.builtin.debug:
+    msg: "No purpose: kafka entries in storage_config.yml; skipping Kafka local storage cleanup."
+  when: (_cleanup_kafka_disk_entries | default([]) | length) == 0
+
+- name: Kafka Local Storage | Ordering safety guard (FR-5.1)
+  when: (_cleanup_kafka_disk_entries | default([]) | length) > 0
+  block:
+    - name: Kafka Local Storage | Resolve kube_vip from omnia_config
+      ansible.builtin.set_fact:
+        cleanup_kube_vip: >-
+          {{
+            (cleanup_k8s_omnia_config.service_k8s_cluster | default([]) | first | default({})).virtual_ip_address
+            | default((cleanup_k8s_omnia_config.service_k8s_cluster | default([]) | first | default({})).kube_vip | default('', true), true)
+          }}
+
+    - name: Kafka Local Storage | Add control plane to in-memory inventory
+      ansible.builtin.add_host:
+        name: "{{ cleanup_kube_vip }}"
+        groups: _cleanup_control_plane
+        ansible_user: root
+        ansible_connection: ssh
+      changed_when: false
+      when: cleanup_kube_vip | default('') | length > 0
+
+    - name: Kafka Local Storage | Query active Kafka PVCs
+      ansible.builtin.command: >
+        kubectl get pvc -A -o jsonpath='{range .items[?(@.spec.storageClassName=="omnia-kafka-local")]}{.metadata.name}{"\n"}{end}'
+      delegate_to: "{{ cleanup_kube_vip }}"
+      register: _active_kafka_local_pvcs
+      changed_when: false
+      failed_when: false
+      when: cleanup_kube_vip | default('') | length > 0
+
+    - name: Kafka Local Storage | Fail closed when PVC query failed
+      ansible.builtin.fail:
+        msg: >-
+          Cannot verify Kafka PVC status — kubectl query failed
+          (rc={{ _active_kafka_local_pvcs.rc | default('N/A') }}).
+          Refusing to proceed with local storage cleanup.
+      when:
+        - _active_kafka_local_pvcs is defined
+        - (_active_kafka_local_pvcs.rc | default(0)) != 0
+
+    - name: Kafka Local Storage | Refuse cleanup when Kafka PVCs still exist
+      ansible.builtin.fail:
+        msg: "{{ k8s_cleanup_kafka_active_pvc_fail_msg }}"
+      when:
+        - _active_kafka_local_pvcs.stdout | default('') | trim | length > 0
+
+- name: Kafka Local Storage | Process local storage teardown
+  when: (_cleanup_kafka_disk_entries | default([]) | length) > 0
+  block:
+    - name: Kafka Local Storage | Resolve volume preservation setting
+      ansible.builtin.set_fact:
+        _local_storage_preserve: >-
+          {{
+            not (
+              (hostvars['localhost'] | default({}))['_cleanup_delete_sinks_volume']
+              | default(delete_sinks_volume | default(Delete_sinks_volume | default(false)))
+              | bool
+            )
+          }}
+
+    - name: Kafka Local Storage | Display preservation status
+      ansible.builtin.debug:
+        msg: >-
+          Kafka local storage volume preservation is
+          {{ 'ENABLED (volumes and VG kept)' if _local_storage_preserve | bool else 'DISABLED (full wipe)' }}.
+
+    - name: Kafka Local Storage | Execute teardown tasks
+      when:
+        - not (_local_storage_preserve | bool)
+        - not dry_run | default(false) | bool
+      block:
+        - name: Kafka Local Storage | Delete StorageClass
+          ansible.builtin.command: >
+            kubectl delete storageclass omnia-kafka-local --ignore-not-found=true
+          delegate_to: "{{ cleanup_kube_vip }}"
+          changed_when: true
+          failed_when: false
+          when: cleanup_kube_vip | default('') | length > 0
+
+        - name: Kafka Local Storage | Remove node label omnia.dell.com/kafka-storage
+          ansible.builtin.command: >
+            kubectl label nodes -l omnia.dell.com/kafka-storage=true omnia.dell.com/kafka-storage-
+          delegate_to: "{{ cleanup_kube_vip }}"
+          changed_when: true
+          failed_when: false
+          when: cleanup_kube_vip | default('') | length > 0
+
+        - name: Kafka Local Storage | Uninstall TopoLVM release
+          ansible.builtin.command: >
+            helm uninstall topolvm -n topolvm-system --wait --ignore-not-found
+          delegate_to: "{{ cleanup_kube_vip }}"
+          changed_when: true
+          failed_when: false
+          when: cleanup_kube_vip | default('') | length > 0
+
+        - name: Kafka Local Storage | Delete TopoLVM namespace
+          ansible.builtin.command: >
+            kubectl delete namespace topolvm-system --ignore-not-found=true --wait=true
+          delegate_to: "{{ cleanup_kube_vip }}"
+          changed_when: true
+          failed_when: false
+          when: cleanup_kube_vip | default('') | length > 0
+
+        - name: Kafka Local Storage | Read approved disk map to identify worker nodes
+          ansible.builtin.slurp:
+            src: "{{ cleanup_k8s_mount_point }}/kafka_disk_mapping/disk-map.approved.json"
+          delegate_to: "{{ cleanup_kube_vip }}"
+          register: _disk_map_raw
+          failed_when: false
+          when:
+            - cleanup_k8s_mount_point | default('') | length > 0
+            - cleanup_kube_vip | default('') | length > 0
+
+        - name: Kafka Local Storage | Parse Kafka worker nodes from approved map
+          ansible.builtin.set_fact:
+            _kafka_worker_nodes: >-
+              {{
+                (_disk_map_raw.content | b64decode | from_json).rows | default([])
+                | selectattr('purpose', 'equalto', 'kafka')
+                | map(attribute='node')
+                | unique
+                | list
+              }}
+          when:
+            - _disk_map_raw is defined
+            - _disk_map_raw.content is defined
+          failed_when: false
+
+        - name: Kafka Local Storage | Add worker nodes to in-memory inventory
+          ansible.builtin.add_host:
+            name: "{{ item }}"
+            groups: _cleanup_worker_nodes
+            ansible_user: root
+            ansible_connection: ssh
+          loop: "{{ _kafka_worker_nodes | default([]) }}"
+          changed_when: false
+          when: (_kafka_worker_nodes | default([]) | length) > 0
+
+        - name: Kafka Local Storage | Wipe Kafka volume groups on worker nodes
+          ansible.builtin.shell: |
+            vg="{{ _cleanup_kafka_disk_entries[0].volume_group | default('omnia-kafka-vg') }}"
+            if vgs "$vg" >/dev/null 2>&1; then
+              for lv in $(lvs --noheadings -o lv_name "$vg" 2>/dev/null); do
+                lvremove -y "$vg/$lv" || true
+              done
+              pvs_to_clean=$(pvs --noheadings -o pv_name -S "vg_name=$vg" 2>/dev/null || true)
+              vgremove -ff -y "$vg" || true
+              for pv in $pvs_to_clean; do
+                [ -b "$pv" ] && pvremove -ff -y "$pv" || true
+              done
+            fi
+          args:
+            executable: /bin/bash
+          delegate_to: "{{ item }}"
+          loop: "{{ _kafka_worker_nodes | default([]) }}"
+          changed_when: true
+          failed_when: false
+          when: (_kafka_worker_nodes | default([]) | length) > 0
+
+        - name: Kafka Local Storage | Remove kafka_disk_mapping from NFS share
+          ansible.builtin.file:
+            path: "{{ cleanup_k8s_mount_point }}/kafka_disk_mapping"
+            state: absent
+          delegate_to: "{{ cleanup_kube_vip }}"
+          when:
+            - cleanup_k8s_mount_point | default('') | length > 0
+            - cleanup_kube_vip | default('') | length > 0

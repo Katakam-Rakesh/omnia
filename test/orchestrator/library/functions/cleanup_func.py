@@ -399,3 +399,38 @@ def check_cleanup_credentials(host) -> dict[str, Any]:
         fields,
         "Credential policy mismatch: " + ", ".join(failures) if failures else "",
     )
+
+
+def check_cleanup_kafka_local_storage(host) -> dict[str, Any]:
+    """Verify Kafka local storage resources are removed when teardown runs."""
+    fields: list[tuple[str, object]] = []
+    failures: list[str] = []
+
+    sc_check = host.run("kubectl get sc omnia-kafka-local --no-headers 2>/dev/null")
+    sc_absent = sc_check.rc != 0 or not sc_check.stdout.strip()
+    fields.append(("StorageClass omnia-kafka-local", "removed" if sc_absent else "STILL EXISTS"))
+    if not sc_absent:
+        failures.append("StorageClass omnia-kafka-local still exists")
+
+    label_check = host.run(
+        "kubectl get nodes -l omnia.dell.com/kafka-storage=true --no-headers 2>/dev/null"
+    )
+    label_absent = label_check.rc != 0 or not label_check.stdout.strip()
+    fields.append(
+        ("Node label omnia.dell.com/kafka-storage", "removed" if label_absent else "STILL EXISTS")
+    )
+    if not label_absent:
+        failures.append("Nodes still have omnia.dell.com/kafka-storage label")
+
+    helm_check = host.run("helm status topolvm -n topolvm-system 2>/dev/null")
+    helm_absent = helm_check.rc != 0
+    fields.append(("TopoLVM release", "removed" if helm_absent else "STILL EXISTS"))
+    if not helm_absent:
+        failures.append("TopoLVM helm release still exists")
+
+    return _result(
+        not failures,
+        "Kafka local storage cleanup postconditions checked",
+        fields,
+        "; ".join(failures),
+    )
